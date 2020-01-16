@@ -467,7 +467,7 @@ def build_targets(model, targets):
         t, a = targets, []
         gwh = t[:, 4:6] * ng
         if nt: # 如果存在目标
-            iou = wh_iou(anchor_vec, gwh)
+            iou = wh_iou(anchor_vec, gwh) # 计算先验框和GT的iou
 
             if use_all_anchors:
                 na = len(anchor_vec)  # number of anchors
