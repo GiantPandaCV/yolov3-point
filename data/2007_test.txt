@@ -1,0 +1,12 @@
+./data/images/val2014/110.jpg
+./data/images/val2014/114.jpg
+./data/images/val2014/119.jpg
+./data/images/val2014/33.jpg
+./data/images/val2014/38.jpg
+./data/images/val2014/53.jpg
+./data/images/val2014/63.jpg
+./data/images/val2014/67.jpg
+./data/images/val2014/77.jpg
+./data/images/val2014/85.jpg
+./data/images/val2014/97.jpg
+./data/images/val2014/98.jpg

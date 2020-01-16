@@ -332,10 +332,11 @@ def box_iou(boxes1, boxes2):
 
 def wh_iou(wh1, wh2):
     # Returns the nxm IoU matrix. wh1 is nx2, wh2 is mx2
-    wh1 = wh1[:, None]  # [N,1,2]
-    wh2 = wh2[None]  # [1,M,2]
-    inter = torch.min(wh1, wh2).prod(2)  # [N,M]
+    wh1 = wh1[:, None]  # [N,1,2] : 3, 1, 2
+    wh2 = wh2[None]  # [1,M,2] :  1, 1, 2
+    inter = torch.min(wh1, wh2).prod(2)  # [N,M] intersection
     return inter / (wh1.prod(2) + wh2.prod(2) - inter)  # iou = inter / (area1 + area2 - inter)
+    # intersection over union
 
 
 class FocalLoss(nn.Module):
@@ -365,6 +366,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
+
     h = model.hyp  # hyperparameters
     arc = model.arc  # # (default, uCE, uBCE) detection architectures
     red = 'sum'  # Loss reduction (sum or mean)
@@ -372,6 +374,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     # Define criteria
     BCEcls = nn.BCEWithLogitsLoss(pos_weight=ft([h['cls_pw']]), reduction=red)
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=ft([h['obj_pw']]), reduction=red)
+    
     BCE = nn.BCEWithLogitsLoss(reduction=red)
     CE = nn.CrossEntropyLoss(reduction=red)  # weight=model.class_weights
 
@@ -458,16 +461,18 @@ def build_targets(model, targets):
             ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
         else:
             ng, anchor_vec = model.module_list[i].ng, model.module_list[i].anchor_vec
+        # ng 代表num of grid (13,13) anchor_vec [[x,y],[x,y]]
 
         # iou of targets-anchors
         t, a = targets, []
         gwh = t[:, 4:6] * ng
-        if nt:
+        if nt: # 如果存在目标
             iou = wh_iou(anchor_vec, gwh)
 
             if use_all_anchors:
                 na = len(anchor_vec)  # number of anchors
                 a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
+                # ???
                 t = targets.repeat([na, 1])
                 gwh = gwh.repeat([na, 1])
             else:  # use best anchor only
@@ -480,8 +485,11 @@ def build_targets(model, targets):
 
         # Indices
         b, c = t[:, :2].long().t()  # target image, class
+
         gxy = t[:, 2:4] * ng  # grid x, y
+
         gi, gj = gxy.long().t()  # grid x, y indices
+
         indices.append((b, a, gj, gi))
 
         # Box
@@ -495,7 +503,7 @@ def build_targets(model, targets):
             assert c.max() < model.nc, 'Model accepts %g classes labeled from 0-%g, however you labelled a class %g. ' \
                                        'See https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data' % (
                                            model.nc, model.nc - 1, c.max())
-
+    # tcls, tbox, indices, anchor_vec = build_targets(model, targets)
     return tcls, tbox, indices, av
 
 
