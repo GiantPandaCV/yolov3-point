@@ -279,7 +279,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                  batch_size=16,
                  augment=False,
                  hyp=None,
-                 rect=False,
+                 rect=False,    
                  image_weights=False,
                  cache_labels=False,
                  cache_images=False):
@@ -432,7 +432,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 else:
                     ne += 1
 
-                pbar.desc = 'Caching labels (%g found, %g missing, %g empty, %g duplicate, for %g images)' 
+                pbar.desc = 'Caching labels (%g found, %g missing, %g empty, %g duplicate, for %g images)' \
                 % (nf, nm, ne, nd, n) # 统计发现，丢失，空，重复标签的数量。
             assert nf > 0, 'No labels found. See %s' % help_url
 
