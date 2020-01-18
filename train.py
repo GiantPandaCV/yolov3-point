@@ -179,7 +179,7 @@ def train():
 
     # Dataloader
     batch_size = min(batch_size, len(dataset))
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 1])  # number of workers change from 8 to 1 to debug
+    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers change from 8 to 1 to debug
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
                                              num_workers=nw,
@@ -398,7 +398,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=2)  # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate', type=int, default=32, help='batches to accumulate before optimizing')
     parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-1cls.cfg', help='*.cfg path')
-    parser.add_argument('--data', type=str, default='data/voc.data', help='*.data path')
+    parser.add_argument('--data', type=str, default='data/dimtargetSingle.data', help='*.data path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -438,18 +438,17 @@ if __name__ == '__main__':
         train()  # train normally
 
     else:  # Evolve hyperparameters (optional)
-        opt.notest = True  # only test final epoch
-        opt.nosave = True  # only save final checkpoint
-        if opt.bucket:
-            os.system('gsutil cp gs://%s/evolve.txt .' % opt.bucket)  # download evolve.txt if exists
+        opt.notest = True  # 仅测试最后一个epoch
+        opt.nosave = True  # 仅测试最后一个权重
 
-        for _ in range(1):  # generations to evolve
+        for _ in range(200):  # generations to evolve
             if os.path.exists('evolve.txt'):  # if evolve.txt exists: select best hyps and mutate
                 # Select parent(s)
                 x = np.loadtxt('evolve.txt', ndmin=2)
                 parent = 'single'  # parent selection method: 'single' or 'weighted'
                 if parent == 'single' or len(x) == 1:
                     x = x[fitness(x).argmax()]
+                    
                 elif parent == 'weighted':  # weighted combination
                     n = min(10, len(x))  # number to merge
                     x = x[np.argsort(-fitness(x))][:n]  # top n mutations
@@ -475,8 +474,15 @@ if __name__ == '__main__':
                     hyp[k] = x[i + 7] * v[i]  # mutate
 
             # Clip to limits
-            keys = ['lr0', 'iou_t', 'momentum', 'weight_decay', 'hsv_s', 'hsv_v', 'translate', 'scale', 'fl_gamma']
-            limits = [(1e-5, 1e-2), (0.00, 0.70), (0.60, 0.98), (0, 0.001), (0, .9), (0, .9), (0, .9), (0, .9), (0, 3)]
+            keys = ['lr0', 'iou_t', 'momentum', 
+                    'weight_decay', 'hsv_s', 
+                    'hsv_v', 'translate', 
+                    'scale', 'fl_gamma']
+            limits = [(1e-5, 1e-2), (0.00, 0.70),
+                     (0.60, 0.98), (0, 0.001), 
+                     (0, .9), (0, .9), (0, .9), 
+                     (0, .9), (0, 3)]
+            
             for k, v in zip(keys, limits):
                 hyp[k] = np.clip(hyp[k], v[0], v[1])
 
@@ -487,4 +493,4 @@ if __name__ == '__main__':
             print_mutation(hyp, results, opt.bucket)
 
             # Plot results
-            # plot_evolution_results(hyp)
+            plot_evolution_results(hyp)
