@@ -8,42 +8,52 @@ ONNX_EXPORT = False
 
 
 def create_modules(module_defs, img_size, arc):
-    # Constructs module list of layer blocks from module configuration in module_defs
-
+    # 通过module_defs进行构建模型
     hyperparams = module_defs.pop(0)
     output_filters = [int(hyperparams['channels'])]
     module_list = nn.ModuleList()
-    routs = []  # list of layers which rout to deeper layers
+    routs = []  # 存储了所有的层，在route、shortcut会使用到。
     yolo_index = -1
 
     for i, mdef in enumerate(module_defs):
         modules = nn.Sequential()
-
+        '''
+        通过type字样不同的类型，来进行模型构建
+        '''
         if mdef['type'] == 'convolutional':
             bn = int(mdef['batch_normalize'])
             filters = int(mdef['filters'])
             size = int(mdef['size'])
-            stride = int(mdef['stride']) if 'stride' in mdef else (int(mdef['stride_y']), int(mdef['stride_x']))
+            stride = int(mdef['stride']) if 'stride' in mdef else (int(
+                mdef['stride_y']), int(mdef['stride_x']))
             pad = (size - 1) // 2 if int(mdef['pad']) else 0
-            modules.add_module('Conv2d', nn.Conv2d(in_channels=output_filters[-1],
-                                                   out_channels=filters,
-                                                   kernel_size=size,
-                                                   stride=stride,
-                                                   padding=pad,
-                                                   groups=int(mdef['groups']) if 'groups' in mdef else 1,
-                                                   bias=not bn))
+            modules.add_module(
+                'Conv2d',
+                nn.Conv2d(
+                    in_channels=output_filters[-1],
+                    out_channels=filters,
+                    kernel_size=size,
+                    stride=stride,
+                    padding=pad,
+                    groups=int(mdef['groups']) if 'groups' in mdef else 1,
+                    bias=not bn))
             if bn:
-                modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.1))
+                modules.add_module('BatchNorm2d',
+                                   nn.BatchNorm2d(filters, momentum=0.1))
             if mdef['activation'] == 'leaky':  # TODO: activation study https://github.com/ultralytics/yolov3/issues/441
-                modules.add_module('activation', nn.LeakyReLU(0.1, inplace=True))
-                # modules.add_module('activation', nn.PReLU(num_parameters=1, init=0.10))
+                modules.add_module('activation', nn.LeakyReLU(0.1,
+                                                              inplace=True))
             elif mdef['activation'] == 'swish':
                 modules.add_module('activation', Swish())
+            # 在此处可以添加新的激活函数
 
         elif mdef['type'] == 'maxpool':
+            # 最大池化操作
             size = int(mdef['size'])
             stride = int(mdef['stride'])
-            maxpool = nn.MaxPool2d(kernel_size=size, stride=stride, padding=int((size - 1) // 2))
+            maxpool = nn.MaxPool2d(kernel_size=size,
+                                   stride=stride,
+                                   padding=int((size - 1) // 2))
             if size == 2 and stride == 1:  # yolov3-tiny
                 modules.add_module('ZeroPad2d', nn.ZeroPad2d((0, 1, 0, 1)))
                 modules.add_module('MaxPool2d', maxpool)
@@ -51,35 +61,38 @@ def create_modules(module_defs, img_size, arc):
                 modules = maxpool
 
         elif mdef['type'] == 'upsample':
-            modules = nn.Upsample(scale_factor=int(mdef['stride']), mode='nearest')
+            # 通过近邻插值完成上采样
+            modules = nn.Upsample(scale_factor=int(mdef['stride']),
+                                  mode='nearest')
 
-        elif mdef['type'] == 'route':  # nn.Sequential() placeholder for 'route' layer
+        elif mdef['type'] == 'route':
+            # nn.Sequential() placeholder for 'route' layer
             layers = [int(x) for x in mdef['layers'].split(',')]
-            filters = sum([output_filters[i + 1 if i > 0 else i] for i in layers])
+            filters = sum(
+                [output_filters[i + 1 if i > 0 else i] for i in layers])
+            # extend表示添加一系列对象
             routs.extend([l if l > 0 else l + i for l in layers])
-            # if mdef[i+1]['type'] == 'reorg3d':
-            #     modules = nn.Upsample(scale_factor=1/float(mdef[i+1]['stride']), mode='nearest')  # reorg3d
 
-        elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
+        elif mdef['type'] == 'shortcut':
+            # nn.Sequential() placeholder for 'shortcut' layer
             filters = output_filters[int(mdef['from'])]
             layer = int(mdef['from'])
             routs.extend([i + layer if layer < 0 else layer])
 
-        elif mdef['type'] == 'reorg3d':  # yolov3-spp-pan-scale
-            # torch.Size([16, 128, 104, 104])
-            # torch.Size([16, 64, 208, 208]) <-- # stride 2 interpolate dimensions 2 and 3 to cat with prior layer
-            pass
-
         elif mdef['type'] == 'yolo':
             yolo_index += 1
             mask = [int(x) for x in mdef['mask'].split(',')]  # anchor mask
-            modules = YOLOLayer(anchors=mdef['anchors'][mask],  # anchor list
-                                nc=int(mdef['classes']),  # number of classes
-                                img_size=img_size,  # (416, 416)
-                                yolo_index=yolo_index,  # 0, 1 or 2
-                                arc=arc)  # yolo architecture
+            modules = YOLOLayer(
+                anchors=mdef['anchors'][mask],  # anchor list
+                nc=int(mdef['classes']),  # number of classes
+                img_size=img_size,  # (416, 416)
+                yolo_index=yolo_index,  # 0, 1 or 2
+                arc=arc)  # yolo architecture
 
-            # Initialize preceding Conv2d() bias (https://arxiv.org/pdf/1708.02002.pdf section 3.3)
+            # 这是在focal loss文章中提到的为卷积层添加bias
+            # 主要用于解决样本不平衡问题
+            # Initialize preceding Conv2d() bias
+            # (https://arxiv.org/pdf/1708.02002.pdf section 3.3)
             try:
                 if arc == 'defaultpw' or arc == 'Fdefaultpw':  # default with positive weights
                     b = [-5.0, -5.0]  # obj, cls
@@ -96,10 +109,12 @@ def create_modules(module_defs, img_size, arc):
                 elif arc == 'uFCE':  # unified FocalCE (64 cls, 1 background + 80 classes)
                     b = [7.7, -1.1]
 
-                bias = module_list[-1][0].bias.view(len(mask), -1)  # 255 to 3x85
+                bias = module_list[-1][0].bias.view(len(mask), -1)
+                # 255 to 3x85
                 bias[:, 4] += b[0] - bias[:, 4].mean()  # obj
                 bias[:, 5:] += b[1] - bias[:, 5:].mean()  # cls
-                # bias = torch.load('weights/yolov3-spp.bias.pt')[yolo_index]  # list of tensors [3x85, 3x85, 3x85]
+                
+                # list of tensors [3x85, 3x85, 3x85]
                 module_list[-1][0].bias = torch.nn.Parameter(bias.view(-1))
                 # utils.print_model_biases(model)
             except:
@@ -108,8 +123,9 @@ def create_modules(module_defs, img_size, arc):
         else:
             print('Warning: Unrecognized Layer Type: ' + mdef['type'])
 
-        # Register module list and number of output filters
+        # 将module内容保存在module_list中。
         module_list.append(modules)
+        # 保存所有的out filter个数
         output_filters.append(filters)
 
     return module_list, routs
@@ -124,7 +140,8 @@ class SwishImplementation(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         sigmoid_i = torch.sigmoid(ctx.saved_variables[0])
-        return grad_output * (sigmoid_i * (1 + ctx.saved_variables[0] * (1 - sigmoid_i)))
+        return grad_output * (sigmoid_i * (1 + ctx.saved_variables[0] *
+                                           (1 - sigmoid_i)))
 
 
 class MemoryEfficientSwish(nn.Module):
@@ -169,7 +186,8 @@ class YOLOLayer(nn.Module):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
-        p = p.view(bs, self.na, self.no, self.ny, self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
+        p = p.view(bs, self.na, self.no, self.ny,
+                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
             return p
@@ -178,19 +196,22 @@ class YOLOLayer(nn.Module):
             # Constants CAN NOT BE BROADCAST, ensure correct shape!
             m = self.na * self.nx * self.ny
             grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(m, 2)
-            anchor_wh = self.anchor_wh.repeat((1, 1, self.nx, self.ny, 1)).view(m, 2) / self.ng
+            anchor_wh = self.anchor_wh.repeat(
+                (1, 1, self.nx, self.ny, 1)).view(m, 2) / self.ng
 
             p = p.view(m, self.no)
             xy = torch.sigmoid(p[:, 0:2]) + grid_xy  # x, y
             wh = torch.exp(p[:, 2:4]) * anchor_wh  # width, height
-            p_cls = torch.sigmoid(p[:, 5:self.no]) * torch.sigmoid(p[:, 4:5])  # conf
+            p_cls = torch.sigmoid(p[:, 5:self.no]) * torch.sigmoid(
+                p[:, 4:5])  # conf
             return p_cls, xy / self.ng, wh
 
         else:  # inference
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
             io = p.clone()  # inference output
             io[..., :2] = torch.sigmoid(io[..., :2]) + self.grid_xy  # xy
-            io[..., 2:4] = torch.exp(io[..., 2:4]) * self.anchor_wh  # wh yolo method
+            io[..., 2:4] = torch.exp(
+                io[..., 2:4]) * self.anchor_wh  # wh yolo method
             # io[..., 2:4] = ((torch.sigmoid(io[..., 2:4]) * 2) ** 3) * self.anchor_wh  # wh power method
             io[..., :4] *= self.stride
 
@@ -204,7 +225,8 @@ class YOLOLayer(nn.Module):
                 io[..., 4] = 1
 
             if self.nc == 1:
-                io[..., 5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
+                io[...,
+                   5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
 
             # reshape from [1, 3, 13, 13, 85] to [1, 507, 85]
             return io.view(bs, -1, self.no), p
@@ -217,19 +239,25 @@ class Darknet(nn.Module):
         super(Darknet, self).__init__()
 
         self.module_defs = parse_model_cfg(cfg)
-        self.module_list, self.routs = create_modules(self.module_defs, img_size, arc)
+        self.module_list, self.routs = create_modules(self.module_defs,
+                                                      img_size, arc)
         self.yolo_layers = get_yolo_layers(self)
 
         # Darknet Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.array([0, 2, 5], dtype=np.int32)  # (int32) version info: major, minor, revision
-        self.seen = np.array([0], dtype=np.int64)  # (int64) number of images seen during training
+        self.version = np.array(
+            [0, 2, 5],
+            dtype=np.int32)  # (int32) version info: major, minor, revision
+        self.seen = np.array(
+            [0],
+            dtype=np.int64)  # (int64) number of images seen during training
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
         layer_outputs = []
         output = []
 
-        for i, (mdef, module) in enumerate(zip(self.module_defs, self.module_list)):
+        for i, (mdef,
+                module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
             if mtype in ['convolutional', 'upsample', 'maxpool']:
                 x = module(x)
@@ -241,7 +269,8 @@ class Darknet(nn.Module):
                     try:
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
                     except:  # apply stride 2 for darknet reorg layer
-                        layer_outputs[layers[1]] = F.interpolate(layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
+                        layer_outputs[layers[1]] = F.interpolate(
+                            layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
                     # print(''), [print(layer_outputs[i].shape) for i in layers], print(x.shape)
             elif mtype == 'shortcut':
@@ -277,21 +306,28 @@ class Darknet(nn.Module):
 
 
 def get_yolo_layers(model):
-    return [i for i, x in enumerate(model.module_defs) if x['type'] == 'yolo']  # [82, 94, 106] for yolov3
+    return [i for i, x in enumerate(model.module_defs)
+            if x['type'] == 'yolo']  # [82, 94, 106] for yolov3
 
 
-def create_grids(self, img_size=416, ng=(13, 13), device='cpu', type=torch.float32):
+def create_grids(self,
+                 img_size=416,
+                 ng=(13, 13),
+                 device='cpu',
+                 type=torch.float32):
     nx, ny = ng  # x and y grid size
     self.img_size = max(img_size)
     self.stride = self.img_size / max(ng)
 
     # build xy offsets
     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
-    self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view((1, 1, ny, nx, 2))
+    self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view(
+        (1, 1, ny, nx, 2))
 
     # build wh gains
     self.anchor_vec = self.anchors.to(device) / self.stride
-    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device).type(type)
+    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1,
+                                          2).to(device).type(type)
     self.ng = torch.Tensor(ng).to(device)
     self.nx = nx
     self.ny = ny
@@ -310,13 +346,18 @@ def load_darknet_weights(self, weights, cutoff=-1):
     # Read weights file
     with open(weights, 'rb') as f:
         # Read Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.fromfile(f, dtype=np.int32, count=3)  # (int32) version info: major, minor, revision
-        self.seen = np.fromfile(f, dtype=np.int64, count=1)  # (int64) number of images seen during training
+        self.version = np.fromfile(
+            f, dtype=np.int32,
+            count=3)  # (int32) version info: major, minor, revision
+        self.seen = np.fromfile(
+            f, dtype=np.int64,
+            count=1)  # (int64) number of images seen during training
 
         weights = np.fromfile(f, dtype=np.float32)  # the rest are weights
 
     ptr = 0
-    for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
+    for i, (mdef, module) in enumerate(
+            zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
         if mdef['type'] == 'convolutional':
             conv_layer = module[0]
             if mdef['batch_normalize']:
@@ -324,30 +365,36 @@ def load_darknet_weights(self, weights, cutoff=-1):
                 bn_layer = module[1]
                 num_b = bn_layer.bias.numel()  # Number of biases
                 # Bias
-                bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.bias)
+                bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.bias)
                 bn_layer.bias.data.copy_(bn_b)
                 ptr += num_b
                 # Weight
-                bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.weight)
+                bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.weight)
                 bn_layer.weight.data.copy_(bn_w)
                 ptr += num_b
                 # Running Mean
-                bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_mean)
+                bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.running_mean)
                 bn_layer.running_mean.data.copy_(bn_rm)
                 ptr += num_b
                 # Running Var
-                bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_var)
+                bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    bn_layer.running_var)
                 bn_layer.running_var.data.copy_(bn_rv)
                 ptr += num_b
             else:
                 # Load conv. bias
                 num_b = conv_layer.bias.numel()
-                conv_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(conv_layer.bias)
+                conv_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
+                    conv_layer.bias)
                 conv_layer.bias.data.copy_(conv_b)
                 ptr += num_b
             # Load conv. weights
             num_w = conv_layer.weight.numel()
-            conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(conv_layer.weight)
+            conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(
+                conv_layer.weight)
             conv_layer.weight.data.copy_(conv_w)
             ptr += num_w
 
@@ -363,7 +410,8 @@ def save_weights(self, path='model.weights', cutoff=-1):
         self.seen.tofile(f)  # (int64) number of images seen during training
 
         # Iterate through layers
-        for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
+        for i, (mdef, module) in enumerate(
+                zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
             if mdef['type'] == 'convolutional':
                 conv_layer = module[0]
                 # If batch norm, load bn first
@@ -396,11 +444,13 @@ def convert(cfg='cfg/yolov3-spp.cfg', weights='weights/yolov3-spp.weights'):
     elif weights.endswith('.weights'):  # darknet format
         _ = load_darknet_weights(model, weights)
 
-        chkpt = {'epoch': -1,
-                 'best_fitness': None,
-                 'training_results': None,
-                 'model': model.state_dict(),
-                 'optimizer': None}
+        chkpt = {
+            'epoch': -1,
+            'best_fitness': None,
+            'training_results': None,
+            'model': model.state_dict(),
+            'optimizer': None
+        }
 
         torch.save(chkpt, 'converted.pt')
         print("Success: converted '%s' to 'converted.pt'" % weights)
@@ -414,16 +464,18 @@ def attempt_download(weights):
     msg = weights + ' missing, try downloading from https://drive.google.com/open?id=1LezFG5g3BCW6iYaV89B2i64cqEUZD7e0'
 
     if weights and not os.path.isfile(weights):
-        d = {'yolov3-spp.weights': '16lYS4bcIdM2HdmyJBVDOvt3Trx6N3W2R',
-             'yolov3.weights': '1uTlyDWlnaqXcsKOktP5aH_zRDbfcDp-y',
-             'yolov3-tiny.weights': '1CCF-iNIIkYesIDzaPvdwlcf7H9zSsKZQ',
-             'yolov3-spp.pt': '1f6Ovy3BSq2wYq4UfvFUpxJFNDFfrIDcR',
-             'yolov3.pt': '1SHNFyoe5Ni8DajDNEqgB2oVKBb_NoEad',
-             'yolov3-tiny.pt': '10m_3MlpQwRtZetQxtksm9jqHrPTHZ6vo',
-             'darknet53.conv.74': '1WUVBid-XuoUBmvzBVUCBl_ELrzqwA8dJ',
-             'yolov3-tiny.conv.15': '1Bw0kCpplxUqyRYAJr9RY9SGnOJbo9nEj',
-             'ultralytics49.pt': '158g62Vs14E3aj7oPVPuEnNZMKFNgGyNq',
-             'ultralytics68.pt': '1Jm8kqnMdMGUUxGo8zMFZMJ0eaPwLkxSG'}
+        d = {
+            'yolov3-spp.weights': '16lYS4bcIdM2HdmyJBVDOvt3Trx6N3W2R',
+            'yolov3.weights': '1uTlyDWlnaqXcsKOktP5aH_zRDbfcDp-y',
+            'yolov3-tiny.weights': '1CCF-iNIIkYesIDzaPvdwlcf7H9zSsKZQ',
+            'yolov3-spp.pt': '1f6Ovy3BSq2wYq4UfvFUpxJFNDFfrIDcR',
+            'yolov3.pt': '1SHNFyoe5Ni8DajDNEqgB2oVKBb_NoEad',
+            'yolov3-tiny.pt': '10m_3MlpQwRtZetQxtksm9jqHrPTHZ6vo',
+            'darknet53.conv.74': '1WUVBid-XuoUBmvzBVUCBl_ELrzqwA8dJ',
+            'yolov3-tiny.conv.15': '1Bw0kCpplxUqyRYAJr9RY9SGnOJbo9nEj',
+            'ultralytics49.pt': '158g62Vs14E3aj7oPVPuEnNZMKFNgGyNq',
+            'ultralytics68.pt': '1Jm8kqnMdMGUUxGo8zMFZMJ0eaPwLkxSG'
+        }
 
         file = Path(weights).name
         if file in d:
@@ -434,6 +486,7 @@ def attempt_download(weights):
             r = os.system('curl -f ' + url + ' -o ' + weights)
 
         # Error check
-        if not (r == 0 and os.path.exists(weights) and os.path.getsize(weights) > 1E6):  # weights exist and > 1MB
+        if not (r == 0 and os.path.exists(weights)
+                and os.path.getsize(weights) > 1E6):  # weights exist and > 1MB
             os.system('rm ' + weights)  # remove partial downloads
             raise Exception(msg)

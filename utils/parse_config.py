@@ -4,19 +4,27 @@ import numpy as np
 
 
 def parse_model_cfg(path):
-    # Parse the yolo *.cfg file and return module definitions path may be 'cfg/yolov3.cfg', 'yolov3.cfg', or 'yolov3'
-    if not path.endswith('.cfg'):  # add .cfg suffix if omitted
+    # path参数为: cfg/yolov3-tiny.cfg
+    if not path.endswith('.cfg'):
         path += '.cfg'
-    if not os.path.exists(path) and os.path.exists('cfg' + os.sep + path):  # add cfg/ prefix if omitted
+    if not os.path.exists(path) and os.path.exists('cfg' + os.sep + path):
         path = 'cfg' + os.sep + path
 
     with open(path, 'r') as f:
         lines = f.read().split('\n')
+
+    # 去除以#开头的，属于注释部分的内容
     lines = [x for x in lines if x and not x.startswith('#')]
-    lines = [x.rstrip().lstrip() for x in lines]  # get rid of fringe whitespaces
-    mdefs = []  # module definitions
+    lines = [x.rstrip().lstrip() for x in lines]
+    mdefs = []  # 模块的定义
     for line in lines:
-        if line.startswith('['):  # This marks the start of a new block
+        if line.startswith('['):  # 标志着一个模块的开始
+            '''
+            eg:
+            [shortcut]
+            from=-3
+            activation=linear
+            '''
             mdefs.append({})
             mdefs[-1]['type'] = line[1:-1].rstrip()
             if mdefs[-1]['type'] == 'convolutional':
