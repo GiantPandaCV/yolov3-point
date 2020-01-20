@@ -91,32 +91,41 @@ def create_modules(module_defs, img_size, arc):
 
             # 这是在focal loss文章中提到的为卷积层添加bias
             # 主要用于解决样本不平衡问题
-            # Initialize preceding Conv2d() bias
-            # (https://arxiv.org/pdf/1708.02002.pdf section 3.3)
+            # (论文地址 https://arxiv.org/pdf/1708.02002.pdf section 3.3)
+            # pw 代表pretrained weights
             try:
-                if arc == 'defaultpw' or arc == 'Fdefaultpw':  # default with positive weights
+                if arc == 'defaultpw' or arc == 'Fdefaultpw':
+                    # default with positive weights
                     b = [-5.0, -5.0]  # obj, cls
-                elif arc == 'default':  # default no pw (40 cls, 80 obj)
+                elif arc == 'default':
+                    # default no pw (40 cls, 80 obj)
                     b = [-5.0, -5.0]
-                elif arc == 'uBCE':  # unified BCE (80 classes)
+                elif arc == 'uBCE':
+                    # unified BCE (80 classes)
                     b = [0, -9.0]
-                elif arc == 'uCE':  # unified CE (1 background + 80 classes)
+                elif arc == 'uCE':
+                    # unified CE (1 background + 80 classes)
                     b = [10, -0.1]
-                elif arc == 'Fdefault':  # Focal default no pw (28 cls, 21 obj, no pw)
+                elif arc == 'Fdefault':
+                    # Focal default no pw (28 cls, 21 obj, no pw)
                     b = [-2.1, -1.8]
-                elif arc == 'uFBCE' or arc == 'uFBCEpw':  # unified FocalBCE (5120 obj, 80 classes)
+                elif arc == 'uFBCE' or arc == 'uFBCEpw':
+                    # unified FocalBCE (5120 obj, 80 classes)
                     b = [0, -6.5]
-                elif arc == 'uFCE':  # unified FocalCE (64 cls, 1 background + 80 classes)
+                elif arc == 'uFCE':
+                    # unified FocalCE (64 cls, 1 background + 80 classes)
                     b = [7.7, -1.1]
 
+                # len(mask) = 3
                 bias = module_list[-1][0].bias.view(len(mask), -1)
+
                 # 255 to 3x85
                 bias[:, 4] += b[0] - bias[:, 4].mean()  # obj
                 bias[:, 5:] += b[1] - bias[:, 5:].mean()  # cls
-                
+
                 # list of tensors [3x85, 3x85, 3x85]
                 module_list[-1][0].bias = torch.nn.Parameter(bias.view(-1))
-                # utils.print_model_biases(model)
+
             except:
                 print('WARNING: smart bias initialization failure.')
 
@@ -125,7 +134,7 @@ def create_modules(module_defs, img_size, arc):
 
         # 将module内容保存在module_list中。
         module_list.append(modules)
-        # 保存所有的out filter个数
+        # 保存所有的filter个数
         output_filters.append(filters)
 
     return module_list, routs
@@ -225,8 +234,8 @@ class YOLOLayer(nn.Module):
                 io[..., 4] = 1
 
             if self.nc == 1:
-                io[...,
-                   5] = 1  # single-class model https://github.com/ultralytics/yolov3/issues/235
+                io[..., 5] = 1
+                # single-class model https://github.com/ultralytics/yolov3/issues/235
 
             # reshape from [1, 3, 13, 13, 85] to [1, 507, 85]
             return io.view(bs, -1, self.no), p
@@ -244,12 +253,10 @@ class Darknet(nn.Module):
         self.yolo_layers = get_yolo_layers(self)
 
         # Darknet Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.array(
-            [0, 2, 5],
-            dtype=np.int32)  # (int32) version info: major, minor, revision
-        self.seen = np.array(
-            [0],
-            dtype=np.int64)  # (int64) number of images seen during training
+        self.version = np.array([0, 2, 5], dtype=np.int32)
+        # (int32) version info: major, minor, revision
+        self.seen = np.array([0], dtype=np.int64)
+        # (int64) number of images seen during training
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
@@ -272,7 +279,7 @@ class Darknet(nn.Module):
                         layer_outputs[layers[1]] = F.interpolate(
                             layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
-                    # print(''), [print(layer_outputs[i].shape) for i in layers], print(x.shape)
+
             elif mtype == 'shortcut':
                 x = x + layer_outputs[int(mdef['from'])]
             elif mtype == 'yolo':
