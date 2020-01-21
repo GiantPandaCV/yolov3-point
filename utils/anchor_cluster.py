@@ -99,7 +99,7 @@ def load_dataset(path):
 if __name__ == '__main__':
 
     ANNOTATIONS_PATH = "/home/dongpeijie/datasets/voc2007_for_yolo_torch-master/Annotations"  #xml文件所在文件夹
-    CLUSTERS = 3  #聚类数量，anchor数量
+    CLUSTERS = 9  #聚类数量，anchor数量
     INPUTDIM = 416  #输入网络大小
 
     data = load_dataset(ANNOTATIONS_PATH)

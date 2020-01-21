@@ -201,7 +201,7 @@ class YOLOLayer(nn.Module):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)
-        # # (bs, anchors, grid, grid, classes + xywh)
+        # (bs, anchors, grid, grid, classes + xywh)
         p = p.view(bs, self.na, self.no, self.ny,
                    self.nx).permute(0, 1, 3, 4, 2).contiguous()  
 
@@ -209,7 +209,6 @@ class YOLOLayer(nn.Module):
             return p
 
         elif ONNX_EXPORT:
-            # Constants CAN NOT BE BROADCAST, ensure correct shape!
             m = self.na * self.nx * self.ny
             grid_xy = self.grid_xy.repeat((1, self.na, 1, 1, 1)).view(m, 2)
             anchor_wh = self.anchor_wh.repeat(
