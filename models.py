@@ -173,11 +173,11 @@ class YOLOLayer(nn.Module):
         super(YOLOLayer, self).__init__()
 
         self.anchors = torch.Tensor(anchors)
-        self.na = len(anchors)  # number of anchors (3)
-        self.nc = nc  # number of classes (80)
-        self.no = nc + 5  # number of outputs
-        self.nx = 0  # initialize number of x gridpoints
-        self.ny = 0  # initialize number of y gridpoints
+        self.na = len(anchors)  # 该YOLOLayer分配给每个grid的anchor的个数
+        self.nc = nc  # 类别个数
+        self.no = nc + 5  # 每个格子对应输出的维度 class + 5 中5代表x,y,w,h,conf
+        self.nx = 0  # 初始化x方向上的格子数量
+        self.ny = 0  # 初始化y方向上的格子数量
         self.arc = arc
 
         if ONNX_EXPORT:  # grids must be computed in __init__
@@ -187,6 +187,12 @@ class YOLOLayer(nn.Module):
             create_grids(self, img_size, (nx, ny))
 
     def forward(self, p, img_size, var=None):
+        '''
+        onnx代表开放式神经网络交换
+        pytorch中的模型都可以导出或转换为标准ONNX格式
+        在模型采用ONNX格式后，即可在各种平台和设备上运行
+        在这里ONNX代表规范化的推理过程
+        '''
         if ONNX_EXPORT:
             bs = 1  # batch size
         else:
@@ -194,9 +200,10 @@ class YOLOLayer(nn.Module):
             if (self.nx, self.ny) != (nx, ny):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
-        # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
+        # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)
+        # # (bs, anchors, grid, grid, classes + xywh)
         p = p.view(bs, self.na, self.no, self.ny,
-                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
+                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  
 
         if self.training:
             return p
@@ -215,7 +222,7 @@ class YOLOLayer(nn.Module):
                 p[:, 4:5])  # conf
             return p_cls, xy / self.ng, wh
 
-        else:  # inference
+        else:  # 测试推理过程
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
             io = p.clone()  # inference output
             io[..., :2] = torch.sigmoid(io[..., :2]) + self.grid_xy  # xy
@@ -322,16 +329,17 @@ def create_grids(self,
                  ng=(13, 13),
                  device='cpu',
                  type=torch.float32):
-    nx, ny = ng  # x and y grid size
+    nx, ny = ng  # 网格尺寸
     self.img_size = max(img_size)
+    #下采样倍数为32
     self.stride = self.img_size / max(ng)
 
-    # build xy offsets
+    # 划分网格，构建相对左上角的偏移量
     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
     self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view(
         (1, 1, ny, nx, 2))
 
-    # build wh gains
+    # 处理anchor，将其除以下采样倍数
     self.anchor_vec = self.anchors.to(device) / self.stride
     self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1,
                                           2).to(device).type(type)
