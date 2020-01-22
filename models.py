@@ -26,10 +26,10 @@ class SELayer(nn.Module):
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
-        assert kernel_size in (3,7), "kernel size must be 3 or 7"
+        assert kernel_size in (3, 7), "kernel size must be 3 or 7"
         padding = 3 if kernel_size == 7 else 1
 
-        self.conv = nn.Conv2d(2,1,kernel_size, padding=padding, bias=False)
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -39,21 +39,23 @@ class SpatialAttention(nn.Module):
         x = self.conv(x)
         return self.sigmoid(x)
 
+
 class ChannelAttention(nn.Module):
-    def __init__(self, in_planes, rotio=16):
+    def __init__(self, in_planes, ratio=16):
         super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
 
         self.sharedMLP = nn.Sequential(
             nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False), nn.ReLU(),
-            nn.Conv2d(in_planes // rotio, in_planes, 1, bias=False))
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False))
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         avgout = self.sharedMLP(self.avg_pool(x))
         maxout = self.sharedMLP(self.max_pool(x))
         return self.sigmoid(avgout + maxout)
+
 
 def create_modules(module_defs, img_size, arc):
     # 通过module_defs进行构建模型
@@ -117,6 +119,12 @@ def create_modules(module_defs, img_size, arc):
             modules.add_module(
                 'se_module',
                 SELayer(output_filters[-1], reduction=int(mdef['reduction'])))
+
+        elif mdef['type'] == 'cbam':
+            ca = ChannelAttention(output_filters[-1], ratio=int(mdef['ratio']))
+            sa = SpatialAttention(kernel_size=int(mdef['kernelsize']))
+            modules.add_module('channel_attention', ca)
+            modules.add_module('spatial attention', sa)
 
         elif mdef['type'] == 'route':
             # nn.Sequential() placeholder for 'route' layer
@@ -341,9 +349,16 @@ class Darknet(nn.Module):
 
             elif mtype == 'shortcut':
                 x = x + layer_outputs[int(mdef['from'])]
+
+            elif mtype == 'cbam':
+                ca = module[0]
+                sa = module[1]
+                x = ca(x) * x
+                x = sa(x) * x
             elif mtype == 'yolo':
                 output.append(module(x, img_size))
             layer_outputs.append(x if i in self.routs else [])
+
 
         if self.training:
             return output
