@@ -1,7 +1,7 @@
 classes=1
 train=/home/dongpeijie/datasets/dimtargetSingle/2007_train.txt
-valid=/home/dongpeijie/datasets/dimtargetSingle/2007_test.txt
-#/home/dongpeijie/datasets/dimtargetSingle/2007_test.txt
+valid=/home/dongpeijie/datasets/dimtargetSingle/test.txt
+#/home/dongpeijie/datasets/dimtargetSingle/test.txt
 #test=./data/test.txt
 names=/home/dongpeijie/datasets/dimtarget/dimtarget.names
 backup=backup/

@@ -7,6 +7,54 @@ from utils.utils import *
 ONNX_EXPORT = False
 
 
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False), nn.Sigmoid())
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        assert kernel_size in (3,7), "kernel size must be 3 or 7"
+        padding = 3 if kernel_size == 7 else 1
+
+        self.conv = nn.Conv2d(2,1,kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avgout = torch.mean(x, dim=1, keepdim=True)
+        maxout, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avgout, maxout], dim=1)
+        x = self.conv(x)
+        return self.sigmoid(x)
+
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, rotio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.sharedMLP = nn.Sequential(
+            nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False), nn.ReLU(),
+            nn.Conv2d(in_planes // rotio, in_planes, 1, bias=False))
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avgout = self.sharedMLP(self.avg_pool(x))
+        maxout = self.sharedMLP(self.max_pool(x))
+        return self.sigmoid(avgout + maxout)
+
 def create_modules(module_defs, img_size, arc):
     # 通过module_defs进行构建模型
     hyperparams = module_defs.pop(0)
@@ -64,6 +112,11 @@ def create_modules(module_defs, img_size, arc):
             # 通过近邻插值完成上采样
             modules = nn.Upsample(scale_factor=int(mdef['stride']),
                                   mode='nearest')
+
+        elif mdef['type'] == 'se':
+            modules.add_module(
+                'se_module',
+                SELayer(output_filters[-1], reduction=int(mdef['reduction'])))
 
         elif mdef['type'] == 'route':
             # nn.Sequential() placeholder for 'route' layer
@@ -203,7 +256,7 @@ class YOLOLayer(nn.Module):
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)
         # (bs, anchors, grid, grid, classes + xywh)
         p = p.view(bs, self.na, self.no, self.ny,
-                   self.nx).permute(0, 1, 3, 4, 2).contiguous()  
+                   self.nx).permute(0, 1, 3, 4, 2).contiguous()
 
         if self.training:
             return p
@@ -272,7 +325,7 @@ class Darknet(nn.Module):
         for i, (mdef,
                 module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
-            if mtype in ['convolutional', 'upsample', 'maxpool']:
+            if mtype in ['convolutional', 'upsample', 'maxpool', 'se']:
                 x = module(x)
             elif mtype == 'route':
                 layers = [int(x) for x in mdef['layers'].split(',')]
