@@ -206,10 +206,10 @@ def test(cfg,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-se.cfg', help='*.cfg path')
+    parser.add_argument('--cfg', type=str, default='cfg/dt-6a-multi-se.cfg', help='*.cfg path')
     parser.add_argument('--data', type=str, default='data/dimtargetSingle.data', help='*.data path')
-    parser.add_argument('--weights', type=str, default='weights/v3-tiny-se/best.pt', help='path to weights file')
-    parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
+    parser.add_argument('--weights', type=str, default='weights/best.pt', help='path to weights file')
+    parser.add_argument('--batch-size', type=int, default=64, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')

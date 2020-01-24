@@ -378,10 +378,13 @@ class FocalLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, input, target):
+        # print("before" * 10)
         loss = self.loss_fcn(input, target)
-        loss *= self.alpha * (1.000001 - torch.exp(
-            -loss))**self.gamma  # non-zero power for gradient stability
-
+        # print("middle" * 10)
+        # print("-loss:", loss)
+        loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
+        # non-zero power for gradient stability
+        # print("after" * 10)
         if self.reduction == 'mean':
             return loss.mean()
         elif self.reduction == 'sum':
@@ -390,7 +393,8 @@ class FocalLoss(nn.Module):
             return loss
 
 
-def compute_loss(p, targets, model):  # predictions, targets, model
+def compute_loss(p, targets, model):  
+    # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
@@ -422,9 +426,9 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         nb = len(b)
         if nb:  # number of targets
             ng += nb
-            ps = pi[b, a, gj, gi]  
+            ps = pi[b, a, gj, gi]
             # prediction subset corresponding to targets
-            # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4]) 
+            # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])
             # wh power loss (uncomment)
 
             # GIoU
@@ -443,6 +447,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
                 t = torch.zeros_like(ps[:, 5:])  # targets
                 t[range(nb), tcls[i]] = 1.0
                 lcls += BCEcls(ps[:, 5:], t)  # BCE
+
                 # lcls += CE(ps[:, 5:], tcls[i])  # CE
 
                 # Instance-class weighting (use with reduction='none')

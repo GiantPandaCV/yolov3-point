@@ -97,6 +97,34 @@ def create_modules(module_defs, img_size, arc):
                 modules.add_module('activation', Swish())
             # 在此处可以添加新的激活函数
 
+        elif mdef['type'] == 'dilatedconv':
+            bn = int(mdef['batch_normalize'])
+            filters = int(mdef['filters'])
+            size = int(mdef['size'])
+            stride = int(mdef['stride']) if 'stride' in mdef else (int(
+                mdef['stride_y']), int(mdef['stride_x']))
+            pad = (size + 1) // 2 if int(mdef['pad']) else 0
+            modules.add_module(
+                'Conv2d',
+                nn.Conv2d(
+                    in_channels=output_filters[-1],
+                    out_channels=filters,
+                    kernel_size=size,
+                    stride=stride,
+                    padding=pad,
+                    groups=int(mdef['groups']) if 'groups' in mdef else 1,
+                    dilation=int(mdef['dilation']),
+                    bias=not bn))
+            if bn:
+                modules.add_module('BatchNorm2d',
+                                   nn.BatchNorm2d(filters, momentum=0.1))
+            if mdef['activation'] == 'leaky':  # TODO: activation study https://github.com/ultralytics/yolov3/issues/441
+                modules.add_module('activation', nn.LeakyReLU(0.1,
+                                                              inplace=True))
+            elif mdef['activation'] == 'swish':
+                modules.add_module('activation', Swish())
+            # 在此处可以添加新的激活函数
+
         elif mdef['type'] == 'maxpool':
             # 最大池化操作
             size = int(mdef['size'])
@@ -333,7 +361,9 @@ class Darknet(nn.Module):
         for i, (mdef,
                 module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
-            if mtype in ['convolutional', 'upsample', 'maxpool', 'se']:
+            if mtype in [
+                    'convolutional', 'upsample', 'maxpool', 'se', 'dilatedconv'
+            ]:
                 x = module(x)
             elif mtype == 'route':
                 layers = [int(x) for x in mdef['layers'].split(',')]
@@ -358,7 +388,6 @@ class Darknet(nn.Module):
             elif mtype == 'yolo':
                 output.append(module(x, img_size))
             layer_outputs.append(x if i in self.routs else [])
-
 
         if self.training:
             return output
