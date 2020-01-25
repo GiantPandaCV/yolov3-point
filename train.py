@@ -397,7 +397,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=273)  # 500200 batches at bs 16, 117263 COCO images = 273 epochs
     parser.add_argument('--batch-size', type=int, default=128)  # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate', type=int, default=1, help='batches to accumulate before optimizing')
-    parser.add_argument('--cfg', type=str, default='cfg/dt-6a-swish.cfg', help='*.cfg path')
+    parser.add_argument('--cfg', type=str, default='cfg/dt-6a-conv.cfg', help='*.cfg path')
     parser.add_argument('--data', type=str, default='data/dimtargetSingle.data', help='*.data path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')

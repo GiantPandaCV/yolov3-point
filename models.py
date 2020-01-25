@@ -168,6 +168,14 @@ def create_modules(module_defs, img_size, arc):
             layer = int(mdef['from'])
             routs.extend([i + layer if layer < 0 else layer])
 
+            modules.add_module(
+                'stride2conv',
+                nn.Conv2d(filters,
+                          filters,
+                          kernel_size=1,
+                          stride=2,
+                          bias=False))
+
         elif mdef['type'] == 'yolo':
             yolo_index += 1
             mask = [int(x) for x in mdef['mask'].split(',')]  # anchor mask
@@ -360,6 +368,7 @@ class Darknet(nn.Module):
 
         for i, (mdef,
                 module) in enumerate(zip(self.module_defs, self.module_list)):
+            print("第%d层" % i,":" ,x.shape)
             mtype = mdef['type']
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se', 'dilatedconv'
@@ -378,6 +387,7 @@ class Darknet(nn.Module):
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
 
             elif mtype == 'shortcut':
+                x = module(x)
                 x = x + layer_outputs[int(mdef['from'])]
 
             elif mtype == 'cbam':
