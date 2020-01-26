@@ -243,7 +243,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/res10-6a-spp.cfg',
+                        default='cfg/csresnext50-panet-spp.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
