@@ -243,7 +243,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/csresnext50-panet-spp.cfg',
+                        default='cfg/yolov3-tiny-prn.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
