@@ -107,7 +107,7 @@ def create_modules(module_defs, img_size, arc):
             modules.add_module(
                 'Conv2d',
                 nn.Conv2d(
-                    in_channels=output_filters[-1],
+                    in_channels=output_filters[-1], 
                     out_channels=filters,
                     kernel_size=size,
                     stride=stride,

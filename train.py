@@ -10,7 +10,7 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
 mixed_precision = True
@@ -36,7 +36,7 @@ hyp = {'giou': 3.54,  # giou loss gain
        'lrf': -4.,  # final LambdaLR learning rate = lr0 * (10 ** lrf)
        'momentum': 0.937,  # SGD momentum
        'weight_decay': 0.000484,  # optimizer weight decay
-       'fl_gamma': 0.5,  # focal loss gamma
+       'fl_gamma': 2, #0.5,  # focal loss gamma
        'hsv_h': 0.0138,  # image HSV-Hue augmentation (fraction)
        'hsv_s': 0.678,  # image HSV-Saturation augmentation (fraction)
        'hsv_v': 0.36,  # image HSV-Value augmentation (fraction)

@@ -369,7 +369,7 @@ def wh_iou(wh1, wh2):
 class FocalLoss(nn.Module):
     # Wraps focal loss around existing loss_fcn() https://arxiv.org/pdf/1708.02002.pdf
     # i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=2.5)
-    def __init__(self, loss_fcn, gamma=0.5, alpha=1, reduction='mean'):
+    def __init__(self, loss_fcn, gamma=2, alpha=0.5, reduction='mean'):
         super(FocalLoss, self).__init__()
         loss_fcn.reduction = 'none'  # required to apply FL to each element
         self.loss_fcn = loss_fcn
@@ -383,7 +383,7 @@ class FocalLoss(nn.Module):
         # print("middle" * 10)
         # print("-loss:", loss)
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
-        # non-zero power for gradient stability
+        # non-zero power for gradient stability 
         # print("after" * 10)
         if self.reduction == 'mean':
             return loss.mean()
