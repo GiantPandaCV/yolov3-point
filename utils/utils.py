@@ -359,7 +359,7 @@ def box_iou(boxes1, boxes2):
 def wh_iou(wh1, wh2):
     # Returns the nxm IoU matrix. wh1 is nx2, wh2 is mx2
     wh1 = wh1[:, None]  # [N,1,2] : 3, 1, 2
-    wh2 = wh2[None]  # [1,M,2] :  1, 1, 2
+    wh2 = wh2[None]  # [1,M,2] :  1, bs, 2
     inter = torch.min(wh1, wh2).prod(2)  # [N,M] intersection
     return inter / (wh1.prod(2) + wh2.prod(2) - inter
                     )  # iou = inter / (area1 + area2 - inter)
@@ -381,9 +381,10 @@ class FocalLoss(nn.Module):
         # print("before" * 10)
         loss = self.loss_fcn(input, target)
         # print("middle" * 10)
-        # print("-loss:", loss)
+        print("1:", loss)
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
         # non-zero power for gradient stability 
+        print("2:", loss)
         # print("after" * 10)
         if self.reduction == 'mean':
             return loss.mean()
@@ -477,6 +478,7 @@ def compute_loss(p, targets, model):
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
+    
     if red == 'sum':
         bs = tobj.shape[0]  # batch size
         lobj *= 3 / (6300 * bs) * 2  # 3 / np * 2
@@ -509,6 +511,7 @@ def build_targets(model, targets):
         # iou of targets-anchors
         t, a = targets, []
         gwh = t[:, 4:6] * ng
+
         if nt:  # 如果存在目标
             iou = wh_iou(anchor_vec, gwh)  # 计算先验框和GT的iou
 
