@@ -381,10 +381,10 @@ class FocalLoss(nn.Module):
         # print("before" * 10)
         loss = self.loss_fcn(input, target)
         # print("middle" * 10)
-        print("1:", loss)
+        # print("1:", loss)
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
         # non-zero power for gradient stability 
-        print("2:", loss)
+        # print("2:", loss)
         # print("after" * 10)
         if self.reduction == 'mean':
             return loss.mean()
@@ -478,7 +478,7 @@ def compute_loss(p, targets, model):
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
-    
+
     if red == 'sum':
         bs = tobj.shape[0]  # batch size
         lobj *= 3 / (6300 * bs) * 2  # 3 / np * 2
