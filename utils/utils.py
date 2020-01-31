@@ -518,7 +518,6 @@ def build_targets(model, targets):
             if use_all_anchors:
                 na = len(anchor_vec)  # number of anchors
                 a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
-                # ???
                 t = targets.repeat([na, 1])
                 gwh = gwh.repeat([na, 1])
             else:  # use best anchor only
@@ -526,8 +525,8 @@ def build_targets(model, targets):
 
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
             if reject:
-                j = iou.view(-1) > model.hyp[
-                    'iou_t']  # iou threshold hyperparameter
+                j = iou.view(-1) > model.hyp['iou_t']
+                    # iou threshold hyperparameter
                 t, a, gwh = t[j], a[j], gwh[j]
 
         # Indices

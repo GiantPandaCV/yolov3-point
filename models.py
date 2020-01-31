@@ -107,7 +107,7 @@ def create_modules(module_defs, img_size, arc):
             modules.add_module(
                 'Conv2d',
                 nn.Conv2d(
-                    in_channels=output_filters[-1], 
+                    in_channels=output_filters[-1],
                     out_channels=filters,
                     kernel_size=size,
                     stride=stride,
@@ -368,8 +368,10 @@ class Darknet(nn.Module):
 
         for i, (mdef,
                 module) in enumerate(zip(self.module_defs, self.module_list)):
-            # print("第%d层" % i,":" ,x.shape)
             mtype = mdef['type']
+
+            print("第%d层: %s | \t" % (i, mtype), "shape:", x.shape)
+
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se', 'dilatedconv'
             ]:

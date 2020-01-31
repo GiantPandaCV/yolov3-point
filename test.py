@@ -78,6 +78,7 @@ def test(
     jdict, stats, ap, ap_class = [], [], [], []
     for batch_i, (imgs, targets, paths,
                   shapes) in enumerate(tqdm(dataloader, desc=s)):
+        # print("batch:%d, batch img num:%d"%(batch_i,len(imgs)))
         imgs = imgs.to(
             device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
@@ -243,7 +244,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/yolov3-tiny-prn.cfg',
+                        default='cfg/yolov3-tiny-6a.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
@@ -255,7 +256,7 @@ if __name__ == '__main__':
                         help='path to weights file')
     parser.add_argument('--batch-size',
                         type=int,
-                        default=64,
+                        default=2,
                         help='size of each image batch')
     parser.add_argument('--img-size',
                         type=int,
