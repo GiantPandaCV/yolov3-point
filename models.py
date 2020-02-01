@@ -370,7 +370,7 @@ class Darknet(nn.Module):
                 module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
 
-            print("第%d层: %s | \t" % (i, mtype), "shape:", x.shape)
+            # print("第%d层: %15s | " % (i, mtype), "shape:", x.shape)  
 
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se', 'dilatedconv'
