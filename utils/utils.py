@@ -369,13 +369,15 @@ def wh_iou(wh1, wh2):
 class FocalLoss(nn.Module):
     # Wraps focal loss around existing loss_fcn() https://arxiv.org/pdf/1708.02002.pdf
     # i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=2.5)
-    def __init__(self, loss_fcn, gamma=2, alpha=0.5, reduction='mean'):
+    def __init__(self, loss_fcn, gamma=2, alpha=0.5):
         super(FocalLoss, self).__init__()
         loss_fcn.reduction = 'none'  # required to apply FL to each element
         self.loss_fcn = loss_fcn
         self.gamma = gamma
         self.alpha = alpha
-        self.reduction = reduction
+        self.reduction = loss_fcn.reduction
+        self.loss_fcn.reduction = 'none'
+        ## required to apply FL to each element
 
     def forward(self, input, target):
         # print("before" * 10)
@@ -383,7 +385,7 @@ class FocalLoss(nn.Module):
         # print("middle" * 10)
         # print("1:", loss)
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
-        # non-zero power for gradient stability 
+        # non-zero power for gradient stability
         # print("2:", loss)
         # print("after" * 10)
         if self.reduction == 'mean':
@@ -394,7 +396,7 @@ class FocalLoss(nn.Module):
             return loss
 
 
-def compute_loss(p, targets, model):  
+def compute_loss(p, targets, model):
     # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
@@ -526,7 +528,7 @@ def build_targets(model, targets):
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
             if reject:
                 j = iou.view(-1) > model.hyp['iou_t']
-                    # iou threshold hyperparameter
+                # iou threshold hyperparameter
                 t, a, gwh = t[j], a[j], gwh[j]
 
         # Indices

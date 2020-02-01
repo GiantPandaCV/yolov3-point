@@ -46,7 +46,7 @@ def parse_model_cfg(path):
         'type', 'batch_normalize', 'filters', 'size', 'stride', 'pad',
         'activation', 'layers', 'groups', 'from', 'mask', 'anchors', 'classes',
         'num', 'jitter', 'ignore_thresh', 'truth_thresh', 'random', 'stride_x',
-        'stride_y', 'ratio', 'reduction', 'kernelsize', 'dilation'
+        'stride_y', 'ratio', 'reduction', 'kernelsize', 'dilation', 'out'
     ]
 
     f = []  # fields

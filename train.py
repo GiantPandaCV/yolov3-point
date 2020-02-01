@@ -87,6 +87,9 @@ def train():
     # Initialize model
     model = Darknet(cfg, arc=opt.arc).to(device)
 
+    # show model structure
+    module_definations = parse_model_cfg(cfg)
+
     # Optimizer
     pg0, pg1 = [], []  # optimizer parameter groups
     for k, v in dict(model.named_parameters()).items():
@@ -452,7 +455,7 @@ if __name__ == '__main__':
                 parent = 'single'  # parent selection method: 'single' or 'weighted'
                 if parent == 'single' or len(x) == 1:
                     x = x[fitness(x).argmax()]
-                    
+
                 elif parent == 'weighted':  # weighted combination
                     n = min(10, len(x))  # number to merge
                     x = x[np.argsort(-fitness(x))][:n]  # top n mutations
@@ -478,15 +481,15 @@ if __name__ == '__main__':
                     hyp[k] = x[i + 7] * v[i]  # mutate
 
             # Clip to limits
-            keys = ['lr0', 'iou_t', 'momentum', 
-                    'weight_decay', 'hsv_s', 
-                    'hsv_v', 'translate', 
+            keys = ['lr0', 'iou_t', 'momentum',
+                    'weight_decay', 'hsv_s',
+                    'hsv_v', 'translate',
                     'scale', 'fl_gamma']
             limits = [(1e-5, 1e-2), (0.00, 0.70),
-                     (0.60, 0.98), (0, 0.001), 
-                     (0, .9), (0, .9), (0, .9), 
+                     (0.60, 0.98), (0, 0.001),
+                     (0, .9), (0, .9), (0, .9),
                      (0, .9), (0, 3)]
-            
+
             for k, v in zip(keys, limits):
                 hyp[k] = np.clip(hyp[k], v[0], v[1])
 
