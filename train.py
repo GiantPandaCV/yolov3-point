@@ -36,7 +36,7 @@ hyp = {'giou': 3.54,  # giou loss gain
        'lrf': -4.,  # final LambdaLR learning rate = lr0 * (10 ** lrf)
        'momentum': 0.937,  # SGD momentum
        'weight_decay': 0.000484,  # optimizer weight decay
-       'fl_gamma': 2, #0.5,  # focal loss gamma
+       'fl_gamma': 0.5, #0.5,  # focal loss gamma
        'hsv_h': 0.0138,  # image HSV-Hue augmentation (fraction)
        'hsv_s': 0.678,  # image HSV-Saturation augmentation (fraction)
        'hsv_v': 0.36,  # image HSV-Value augmentation (fraction)
@@ -317,15 +317,18 @@ def train():
             continue
         elif not opt.notest or final_epoch:  # Calculate mAP
             is_coco = any([x in data for x in ['coco.data', 'coco2014.data', 'coco2017.data']]) and model.nc == 80
-            results, maps = test.test(cfg,
-                                      data,
-                                      batch_size=batch_size * 2,
-                                      img_size=opt.img_size,
-                                      model=model,
-                                      conf_thres=0.001 if final_epoch else 0.1,  # 0.1 for speed
-                                      iou_thres=0.6 if final_epoch and is_coco else 0.5,
-                                      save_json=final_epoch and is_coco,
-                                      dataloader=testloader)
+            results, maps = test.test(
+                cfg,
+                data,
+                batch_size=batch_size * 2,
+                img_size=opt.img_size,
+                model=model,
+                conf_thres=0.001 if opt.evolve or
+                (final_epoch and is_coco) else 0.1,
+                #if final_epoch else 0.1,  # 0.1 for speed
+                iou_thres=0.6 if final_epoch and is_coco else 0.5,
+                save_json=final_epoch and is_coco,
+                dataloader=testloader)
 
         # Update scheduler
         scheduler.step()

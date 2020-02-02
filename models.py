@@ -254,12 +254,12 @@ def create_modules(module_defs, img_size, arc):
             # corner pool
             size = int(mdef['size'])
             stride = int(mdef['stride'])
-            maxpool_1 = nn.MaxPool1d(kernel_size=(size, 1),
+            maxpool_1 = nn.MaxPool2d(kernel_size=(size, 1),
                                      stride=stride,
-                                     padding=int((size - 1) // 2))
-            maxpool_2 = nn.MaxPool1d(kernel_size=(1, size),
+                                     padding=(int((size - 1) // 2),0))
+            maxpool_2 = nn.MaxPool2d(kernel_size=(1, size),
                                      stride=stride,
-                                     padding=int((size - 1) // 2))
+                                     padding=(0,int((size - 1) // 2)))
 
             if size == 2 and stride == 1:  # yolov3-tiny
                 # 这里不考虑yolov3 tiny
@@ -534,7 +534,10 @@ class Darknet(nn.Module):
 
             elif mtype == 'corner':
                 x1 = module[0](x)
+                # print("after x1:", x1.shape)
                 x2 = module[1](x)
+
+                # print("after x2:",x2.shape)   
                 x = x1 + x2
 
             elif mtype == 'cbam':
