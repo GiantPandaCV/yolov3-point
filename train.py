@@ -29,8 +29,7 @@ hyp = {
     'giou': 3.54,  # giou loss gain
     'cls': 37.4,  # cls loss gain
     'cls_pw': 1.0,  # cls BCELoss positive_weight
-    'obj':
-    49.5,  #64.35,#1,#49.5,  # obj loss gain (*=img_size/320 if img_size != 320)
+    'obj': 49.5,  #64.35,#1,#49.5,  # obj loss gain (*=img_size/320 if img_size != 320)
     'obj_pw': 1.0,  # obj BCELoss positive_weight
     'iou_t': 0.225,  # iou training threshold
     'lr0': 0.00579,  # initial learning rate (SGD=1E-3, Adam=9E-5)
@@ -252,6 +251,14 @@ def train():
     torch_utils.model_info(model, report='summary')  # 'full' or 'summary'
     print('Using %g dataloader workers' % nw)
     print('Starting training for %g epochs...' % epochs)
+
+
+
+    min_min = 1000
+    max_max = -1000
+
+
+
     for epoch in range(start_epoch - 1 if opt.prebias else start_epoch,
                        epochs):  # epoch ------------------------------
         model.train()
@@ -337,7 +344,14 @@ def train():
             pred = model(imgs)
 
             # Compute loss
-            loss, loss_items = compute_loss(pred, targets, model)
+            loss, loss_items, lobj = compute_loss(pred, targets, model)
+
+            # a, lobj, c, d = loss_items
+
+            min_min = min(min_min, lobj)
+            max_max = max(max_max, lobj)
+            # print("minmin %.4f maxmax %.4f" % (min_min, max_max))
+
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
                 return results
@@ -498,9 +512,7 @@ def train():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--epochs', type=int, default=273
-    )
+    parser.add_argument('--epochs', type=int, default=273)
     # 500200 batches at bs 16, 117263 COCO images = 273 epochs
     parser.add_argument('--batch-size', type=int, default=64)
     # effective bs = batch_size * accumulate = 16 * 4 = 64

@@ -373,7 +373,7 @@ class FocalLoss(nn.Module):
         super(FocalLoss, self).__init__()
         # loss_fcn.reduction = 'none'  # required to apply FL to each element
         self.loss_fcn = loss_fcn
-        self.gamma = gamma
+        self.gamma = 2#gamma
         self.alpha = alpha
         self.reduction = loss_fcn.reduction
         self.loss_fcn.reduction = 'none'
@@ -381,11 +381,15 @@ class FocalLoss(nn.Module):
 
     def forward(self, input, target):
         loss = self.loss_fcn(input, target)
+        print("focal loss forward(max and min):", loss.max().item(), loss.min().item())
+
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
         # non-zero power for gradient stability
         if self.reduction == 'mean':
+            print("mean", loss.mean().item())
             return loss.mean()
         elif self.reduction == 'sum':
+            print("sum:", loss.sum().item())
             return loss.sum()
         else:  # 'none'
             return loss
@@ -472,19 +476,25 @@ def compute_loss(p, targets, model):
                 t[b, a, gj, gi] = tcls[i] + 1
             lcls += CE(pi[..., 4:].view(-1, model.nc + 1), t.view(-1))
 
+    # print('lobj' , (lobj.item()))
+
+    temp_loss = lobj
+
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
 
     if red == 'sum':
         bs = tobj.shape[0]  # batch size
-        lobj *= 3 / (6300 * bs) * 2  # 3 / np * 2
+        lobj *= 2 / (676 * bs) * 2  # 3 / np * 2
+        # from 6300 to 676
+        # 3代表3个yolo层
         if ng:
             lcls *= 3 / ng / model.nc
             lbox *= 3 / ng
 
     loss = lbox + lobj + lcls
-    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
+    return loss, torch.cat((lbox, lobj, lcls, loss)).detach(), temp_loss
 
 
 def build_targets(model, targets):
