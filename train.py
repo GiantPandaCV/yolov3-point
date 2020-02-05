@@ -1,11 +1,11 @@
 import argparse
 import os
+import test  # import test.py to get mAP after each epoch
 
 import torch.distributed as dist
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 
-import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
 from utils.utils import *
@@ -88,9 +88,6 @@ def train():
 
     # Initialize model
     model = Darknet(cfg, arc=opt.arc).to(device)
-
-    # show model structure
-    module_definations = parse_model_cfg(cfg)
 
     # Optimizer
     pg0, pg1 = [], []  # optimizer parameter groups
@@ -428,9 +425,9 @@ def train():
         # weighted_fitness = 2 * fitness + fitness_f1
 
         # if weighted_fitness >= best_fitness:
-            # best_fitness = weighted_fitness
-            # best_map = fitness
-            # corresponding_f1 = fitness_f1
+        # best_fitness = weighted_fitness
+        # best_map = fitness
+        # corresponding_f1 = fitness_f1
 
         # Save training results
         save = (not opt.nosave) or (final_epoch and not opt.evolve)
@@ -503,8 +500,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--epochs', type=int, default=273
-    )  # 500200 batches at bs 16, 117263 COCO images = 273 epochs
-    parser.add_argument('--batch-size', type=int, default=128)
+    )
+    # 500200 batches at bs 16, 117263 COCO images = 273 epochs
+    parser.add_argument('--batch-size', type=int, default=64)
     # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate',
                         type=int,
@@ -512,7 +510,7 @@ if __name__ == '__main__':
                         help='batches to accumulate before optimizing')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/yolov3-tiny-6a.cfg',
+                        default='cfg/dt-6a-spp-RF.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,

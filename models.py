@@ -502,6 +502,7 @@ class Darknet(nn.Module):
         # (int32) version info: major, minor, revision
         self.seen = np.array([0], dtype=np.int64)
         # (int64) number of images seen during training
+        self.show = True
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
@@ -512,7 +513,8 @@ class Darknet(nn.Module):
                 module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
 
-            # print("第%d层: %15s | " % (i, mtype), "shape:", x.shape)
+            # if self.show:
+            #     print("第%3d层: %13s | " % (i, mtype), "shape:", x.shape)
 
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se',
@@ -551,6 +553,8 @@ class Darknet(nn.Module):
             elif mtype == 'yolo':
                 output.append(module(x, img_size))
             layer_outputs.append(x if i in self.routs else [])
+
+        self.show = False
 
         if self.training:
             return output
