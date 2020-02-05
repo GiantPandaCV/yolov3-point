@@ -6,91 +6,171 @@ from utils.utils import *
 
 ONNX_EXPORT = False
 '''
-https://github.com/fregu856/deeplabv3
+https://github.com/tahaemara/LiteSeg
 '''
 
 
+class SeparableConv2d(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size=1,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 bias=False):
+        super(SeparableConv2d, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels,
+                               in_channels,
+                               kernel_size,
+                               stride,
+                               padding,
+                               dilation,
+                               groups=in_channels,
+                               bias=bias)
+        self.pointwise = nn.Conv2d(in_channels,
+                                   out_channels,
+                                   1,
+                                   1,
+                                   0,
+                                   1,
+                                   1,
+                                   bias=bias)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.pointwise(x)
+        return x
+
+
 class ASPP(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, inplanes, planes, rate):
         super(ASPP, self).__init__()
+        self.rate = rate
+        if rate == 1:
+            kernel_size = 1
+            padding = 0
+        else:
+            kernel_size = 3
+            padding = rate
+            #self.conv1 = nn.Conv2d(planes, planes, kernel_size=3, bias=False,padding=1)
+            self.conv1 = SeparableConv2d(planes, planes, 3, 1, 1)
+            self.bn1 = nn.BatchNorm2d(planes)
+            self.relu1 = nn.ReLU()
 
-        self.conv_1x1_1 = nn.Conv2d(512, 256, kernel_size=1)
+            #self.atrous_convolution = nn.Conv2d(inplanes, planes, kernel_size=kernel_size,
+            #                         stride=1, padding=padding, dilation=rate, bias=False)
+        self.atrous_convolution = SeparableConv2d(inplanes, planes,
+                                                  kernel_size, 1, padding,
+                                                  rate)
+        self.bn = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU()
 
-        self.bn_conv_1x1_1 = nn.BatchNorm2d(256)
+        self._init_weight()
 
-        self.conv_3x3_1 = nn.Conv2d(512,
-                                    256,
-                                    kernel_size=3,
-                                    stride=1,
-                                    padding=6,
-                                    dilation=6)
-        self.bn_conv_3x3_1 = nn.BatchNorm2d(256)
+    def forward(self, x):
+        x = self.atrous_convolution(x)
+        x = self.bn(x)
+        #x = self.relu(x)
+        if self.rate != 1:
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.relu1(x)
+        return x
 
-        self.conv_3x3_2 = nn.Conv2d(512,
-                                    256,
-                                    kernel_size=3,
-                                    stride=1,
-                                    padding=12,
-                                    dilation=12)
-        self.bn_conv_3x3_2 = nn.BatchNorm2d(256)
-
-        self.conv_3x3_3 = nn.Conv2d(512,
-                                    256,
-                                    kernel_size=3,
-                                    stride=1,
-                                    padding=18,
-                                    dilation=18)
-        self.bn_conv_3x3_3 = nn.BatchNorm2d(256)
-
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-
-        self.conv_1x1_2 = nn.Conv2d(512, 256, kernel_size=1)
-        self.bn_conv_1x1_2 = nn.BatchNorm2d(256)
-
-        self.conv_1x1_3 = nn.Conv2d(1280, 256, kernel_size=1)  # (1280 = 5*256)
-        self.bn_conv_1x1_3 = nn.BatchNorm2d(256)
-
-        self.conv_1x1_4 = nn.Conv2d(256, num_classes, kernel_size=1)
-
-    def forward(self, feature_map):
-        # (feature_map has shape (batch_size, 512, h/16, w/16))
-        # (assuming self.resnet is ResNet18_OS16 or ResNet34_OS16.
-        # If self.resnet instead is ResNet18_OS8 or ResNet34_OS8,
-        # it will be (batch_size, 512, h/8, w/8))
-
-        feature_map_h = feature_map.size()[2]  # (== h/16)
-        feature_map_w = feature_map.size()[3]  # (== w/16)
-
-        # print("=====", feature_map.shape)
-        out_1x1 = F.relu(self.bn_conv_1x1_1(self.conv_1x1_1(feature_map)))
-        # (shape: (batch_size, 256, h/16, w/16))
-        out_3x3_1 = F.relu(self.bn_conv_3x3_1(self.conv_3x3_1(feature_map)))
-        # (shape: (batch_size, 256, h/16, w/16))
-        out_3x3_2 = F.relu(self.bn_conv_3x3_2(self.conv_3x3_2(feature_map)))
-        # (shape: (batch_size, 256, h/16, w/16))
-        out_3x3_3 = F.relu(self.bn_conv_3x3_3(self.conv_3x3_3(feature_map)))
-        # (shape: (batch_size, 256, h/16, w/16))
-        # print('-------')
-
-        out_img = self.avg_pool(feature_map)
-        # (shape: (batch_size, 512, 1, 1))
-        out_img = F.relu(self.bn_conv_1x1_2(self.conv_1x1_2(out_img)))
-        # (shape: (batch_size, 256, 1, 1))
-        out_img = F.upsample(out_img,
-                             size=(feature_map_h, feature_map_w),
-                             mode="bilinear")
-        # (shape: (batch_size, 256, h/16, w/16))
-        # print('?'*5)
-        out = torch.cat([out_1x1, out_3x3_1, out_3x3_2, out_3x3_3, out_img], 1)
-        # (shape: (batch_size, 1280, h/16, w/16))
-        out = F.relu(self.bn_conv_1x1_3(self.conv_1x1_3(out)))
-        # (shape: (batch_size, 256, h/16, w/16))
-        out = self.conv_1x1_4(out)
-        # (shape: (batch_size, num_classes, h/16, w/16))
-
-        return out
+    def _init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight)
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
 
 
+'''
+https://github.com/fregu856/deeplabv3
+'''
+
+# class ASPP(nn.Module):
+#     def __init__(self, num_classes):
+#         super(ASPP, self).__init__()
+
+#         self.conv_1x1_1 = nn.Conv2d(512, 256, kernel_size=1)
+
+#         self.bn_conv_1x1_1 = nn.BatchNorm2d(256)
+
+#         self.conv_3x3_1 = nn.Conv2d(512,
+#                                     256,
+#                                     kernel_size=3,
+#                                     stride=1,
+#                                     padding=6,
+#                                     dilation=6)
+#         self.bn_conv_3x3_1 = nn.BatchNorm2d(256)
+
+#         self.conv_3x3_2 = nn.Conv2d(512,
+#                                     256,
+#                                     kernel_size=3,
+#                                     stride=1,
+#                                     padding=12,
+#                                     dilation=12)
+#         self.bn_conv_3x3_2 = nn.BatchNorm2d(256)
+
+#         self.conv_3x3_3 = nn.Conv2d(512,
+#                                     256,
+#                                     kernel_size=3,
+#                                     stride=1,
+#                                     padding=18,
+#                                     dilation=18)
+#         self.bn_conv_3x3_3 = nn.BatchNorm2d(256)
+
+#         self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+#         self.conv_1x1_2 = nn.Conv2d(512, 256, kernel_size=1)
+#         self.bn_conv_1x1_2 = nn.BatchNorm2d(256)
+
+#         self.conv_1x1_3 = nn.Conv2d(1280, 256, kernel_size=1)  # (1280 = 5*256)
+#         self.bn_conv_1x1_3 = nn.BatchNorm2d(256)
+
+#         self.conv_1x1_4 = nn.Conv2d(256, num_classes, kernel_size=1)
+
+#     def forward(self, feature_map):
+#         # (feature_map has shape (batch_size, 512, h/16, w/16))
+#         # (assuming self.resnet is ResNet18_OS16 or ResNet34_OS16.
+#         # If self.resnet instead is ResNet18_OS8 or ResNet34_OS8,
+#         # it will be (batch_size, 512, h/8, w/8))
+
+#         feature_map_h = feature_map.size()[2]  # (== h/16)
+#         feature_map_w = feature_map.size()[3]  # (== w/16)
+
+#         # print("=====", feature_map.shape)
+#         out_1x1 = F.relu(self.bn_conv_1x1_1(self.conv_1x1_1(feature_map)))
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         out_3x3_1 = F.relu(self.bn_conv_3x3_1(self.conv_3x3_1(feature_map)))
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         out_3x3_2 = F.relu(self.bn_conv_3x3_2(self.conv_3x3_2(feature_map)))
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         out_3x3_3 = F.relu(self.bn_conv_3x3_3(self.conv_3x3_3(feature_map)))
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         # print('-------')
+
+#         out_img = self.avg_pool(feature_map)
+#         # (shape: (batch_size, 512, 1, 1))
+#         out_img = F.relu(self.bn_conv_1x1_2(self.conv_1x1_2(out_img)))
+#         # (shape: (batch_size, 256, 1, 1))
+#         out_img = F.upsample(out_img,
+#                              size=(feature_map_h, feature_map_w),
+#                              mode="bilinear")
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         # print('?'*5)
+#         out = torch.cat([out_1x1, out_3x3_1, out_3x3_2, out_3x3_3, out_img], 1)
+#         # (shape: (batch_size, 1280, h/16, w/16))
+#         out = F.relu(self.bn_conv_1x1_3(self.conv_1x1_3(out)))
+#         # (shape: (batch_size, 256, h/16, w/16))
+#         out = self.conv_1x1_4(out)
+#         # (shape: (batch_size, num_classes, h/16, w/16))
+
+#         return out
 '''
 https://github.com/Lextal/pspnet-pytorch
 '''
@@ -259,10 +339,10 @@ def create_modules(module_defs, img_size, arc):
             stride = int(mdef['stride'])
             maxpool_1 = nn.MaxPool2d(kernel_size=(size, 1),
                                      stride=stride,
-                                     padding=(int((size - 1) // 2),0))
+                                     padding=(int((size - 1) // 2), 0))
             maxpool_2 = nn.MaxPool2d(kernel_size=(1, size),
                                      stride=stride,
-                                     padding=(0,int((size - 1) // 2)))
+                                     padding=(0, int((size - 1) // 2)))
 
             if size == 2 and stride == 1:  # yolov3-tiny
                 # 这里不考虑yolov3 tiny
@@ -293,8 +373,24 @@ def create_modules(module_defs, img_size, arc):
             modules.add_module('Pyramid Pooling Module', ppm)
 
         elif mdef['type'] == 'aspp':
-            aspp = ASPP(int(mdef['out']))
-            modules.add_module('ASPP', aspp)
+            froms = [int(x) for x in mdef['from'].split(',')]
+            out = int(mdef['out'])
+            aspp0 = ASPP(output_filters[-1], out, rate=froms[0])
+            aspp1 = ASPP(output_filters[-1], out, rate=froms[1])
+            aspp2 = ASPP(output_filters[-1], out, rate=froms[2])
+            aspp3 = ASPP(output_filters[-1], out, rate=froms[3])
+
+            gavgpool = nn.Sequential(
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Conv2d(output_filters[-1], out, 1, stride=1, bias=False),
+                nn.BatchNorm2d(out), nn.ReLU())
+
+            modules.add_module('ASPP0', aspp0)
+            modules.add_module('ASPP1', aspp1)
+            modules.add_module('ASPP2', aspp2)
+            modules.add_module('ASPP3', aspp3)
+            modules.add_module('ASPP_avgpool', gavgpool)
+            filters = out * 6
 
         elif mdef['type'] == 'route':
             # nn.Sequential() placeholder for 'route' layer
@@ -518,7 +614,7 @@ class Darknet(nn.Module):
 
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se',
-                    'dilatedconv', 'ppm', 'aspp'
+                    'dilatedconv', 'ppm'
             ]:
                 x = module(x)
             elif mtype == 'route':
@@ -542,8 +638,22 @@ class Darknet(nn.Module):
                 # print("after x1:", x1.shape)
                 x2 = module[1](x)
 
-                # print("after x2:",x2.shape)   
+                # print("after x2:",x2.shape)
                 x = x1 + x2
+            elif mtype == 'aspp':
+                x1 = module[0](x)
+                x2 = module[1](x)
+                x3 = module[2](x)
+                x4 = module[3](x)
+                x5 = module[4](x)
+                # print("x5",x5.shape)
+                x5 = F.interpolate(x5,
+                                   size=x4.size()[2:],
+                                   mode='bilinear',
+                                   align_corners=True)
+                # print("x5,",x5.shape)
+                x = torch.cat((x, x1, x2, x3, x4, x5), dim=1)
+                # print(x.shape)
 
             elif mtype == 'cbam':
                 ca = module[0]
