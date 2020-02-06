@@ -82,7 +82,7 @@ def train():
     nc = int(data_dict['classes'])  # number of classes
 
     # Remove previous results
-    for f in glob.glob('*_batch*.jpg') + glob.glob(results_file):
+    for f in glob.glob('*_batch*.png') + glob.glob(results_file):
         os.remove(f)
 
     # Initialize model
@@ -319,7 +319,7 @@ def train():
 
             # Plot images with bounding boxes
             if ni == 0:
-                fname = 'train_batch%g.jpg' % i
+                fname = 'train_batch%g.png' % i
                 plot_images(imgs=imgs,
                             targets=targets,
                             paths=paths,
@@ -344,12 +344,12 @@ def train():
             pred = model(imgs)
 
             # Compute loss
-            loss, loss_items, lobj = compute_loss(pred, targets, model)
+            loss, loss_items = compute_loss(pred, targets, model)
 
             # a, lobj, c, d = loss_items
 
-            min_min = min(min_min, lobj)
-            max_max = max(max_max, lobj)
+            # min_min = min(min_min, lobj)
+            # max_max = max(max_max, lobj
             # print("minmin %.4f maxmax %.4f" % (min_min, max_max))
 
             if not torch.isfinite(loss):

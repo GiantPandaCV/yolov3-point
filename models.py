@@ -5,6 +5,169 @@ from utils.parse_config import *
 from utils.utils import *
 
 ONNX_EXPORT = False
+
+'''
+https://zhuanlan.zhihu.com/p/100064668
+'''
+class branch(nn.Module):
+    def __init__(self, ch, t=2, leakyReLU=False):
+        super(branch, self).__init__()
+        self.module_list = nn.ModuleList()
+        self.relu = nn.ReLU(inplace=True)
+        self.conv1x1 = nn.Sequential(
+            nn.Conv2d(ch, ch, 1),
+            nn.BatchNorm2d(ch)
+        )
+        self.branch_1 = Conv2d(ch, ch // t, 3, 1, leakyReLU=leakyReLU)
+        self.branch_2 = Conv2d(ch, ch // t, 3, padding=2, dilation=2, leakyReLU=leakyReLU)
+        self.branch_3 = Conv2d(ch, ch // t, 3, padding=3, dilation=3, leakyReLU=leakyReLU)
+        self.fusion = nn.Sequential(
+            nn.Conv2d(ch // t * 3, ch, 1),
+            nn.BatchNorm2d(ch)
+        )
+
+    def forward(self, x):
+        x = self.conv1x1(x)
+        x_1 = self.branch_1(x)
+        x_2 = self.branch_2(x)
+        x_3 = self.branch_3(x)
+        x_f = torch.cat([x_1, x_2, x_3], 1)
+
+        return self.relu(self.fusion(x_f))
+
+'''
+https://github.com/DingXiaoH/ACNet
+'''
+class ACBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 padding_mode='zeros',
+                 deploy=False):
+        super(ACBlock, self).__init__()
+        self.deploy = deploy
+        if deploy:
+            self.fused_conv = nn.Conv2d(in_channels=in_channels,
+                                        out_channels=out_channels,
+                                        kernel_size=(kernel_size, kernel_size),
+                                        stride=stride,
+                                        padding=padding,
+                                        dilation=dilation,
+                                        groups=groups,
+                                        bias=True,
+                                        padding_mode=padding_mode)
+        else:
+            self.square_conv = nn.Conv2d(in_channels=in_channels,
+                                         out_channels=out_channels,
+                                         kernel_size=(kernel_size,
+                                                      kernel_size),
+                                         stride=stride,
+                                         padding=padding,
+                                         dilation=dilation,
+                                         groups=groups,
+                                         bias=False,
+                                         padding_mode=padding_mode)
+            self.square_bn = nn.BatchNorm2d(num_features=out_channels)
+
+            center_offset_from_origin_border = padding - kernel_size // 2
+            ver_pad_or_crop = (center_offset_from_origin_border + 1,
+                               center_offset_from_origin_border)
+            hor_pad_or_crop = (center_offset_from_origin_border,
+                               center_offset_from_origin_border + 1)
+            if center_offset_from_origin_border >= 0:
+                self.ver_conv_crop_layer = nn.Identity()
+                ver_conv_padding = ver_pad_or_crop
+                self.hor_conv_crop_layer = nn.Identity()
+                hor_conv_padding = hor_pad_or_crop
+            else:
+                self.ver_conv_crop_layer = CropLayer(crop_set=ver_pad_or_crop)
+                ver_conv_padding = (0, 0)
+                self.hor_conv_crop_layer = CropLayer(crop_set=hor_pad_or_crop)
+                hor_conv_padding = (0, 0)
+            self.ver_conv = nn.Conv2d(in_channels=in_channels,
+                                      out_channels=out_channels,
+                                      kernel_size=(3, 1),
+                                      stride=stride,
+                                      padding=ver_conv_padding,
+                                      dilation=dilation,
+                                      groups=groups,
+                                      bias=False,
+                                      padding_mode=padding_mode)
+
+            self.hor_conv = nn.Conv2d(in_channels=in_channels,
+                                      out_channels=out_channels,
+                                      kernel_size=(1, 3),
+                                      stride=stride,
+                                      padding=hor_conv_padding,
+                                      dilation=dilation,
+                                      groups=groups,
+                                      bias=False,
+                                      padding_mode=padding_mode)
+            self.ver_bn = nn.BatchNorm2d(num_features=out_channels)
+            self.hor_bn = nn.BatchNorm2d(num_features=out_channels)
+
+    def forward(self, input):
+        if self.deploy:
+            return self.fused_conv(input)
+        else:
+            square_outputs = self.square_conv(input)
+            square_outputs = self.square_bn(square_outputs)
+            # print(square_outputs.size())
+            # return square_outputs
+            vertical_outputs = self.ver_conv_crop_layer(input)
+            vertical_outputs = self.ver_conv(vertical_outputs)
+            vertical_outputs = self.ver_bn(vertical_outputs)
+            # print(vertical_outputs.size())
+            horizontal_outputs = self.hor_conv_crop_layer(input)
+            horizontal_outputs = self.hor_conv(horizontal_outputs)
+            horizontal_outputs = self.hor_bn(horizontal_outputs)
+            # print(horizontal_outputs.size())
+            return square_outputs + vertical_outputs + horizontal_outputs
+
+
+def Conv2dBNReLU(in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 padding_mode='zeros',
+                 use_original_conv=False):
+    # if use_original_conv or kernel_size == 1 or kernel_size == (1, 1):
+    #     return super(ACNetBuilder,
+    #                  self).Conv2dBNReLU(in_channels=in_channels,
+    #                                     out_channels=out_channels,
+    #                                     kernel_size=kernel_size,
+    #                                     stride=stride,
+    #                                     padding=padding,
+    #                                     dilation=dilation,
+    #                                     groups=groups,
+    #                                     padding_mode=padding_mode,
+    #                                     use_original_conv=True)
+    # else:
+    se = nn.Sequential()
+    deploy = False
+    se.add_module(
+        'acb',
+        ACBlock(in_channels,
+                out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                groups=groups,
+                padding_mode=padding_mode,
+                deploy=deploy))
+    se.add_module('relu', nn.ReLU())
+    return se
+
+
 '''
 https://github.com/tahaemara/LiteSeg
 '''
@@ -319,6 +482,21 @@ def create_modules(module_defs, img_size, arc):
             elif mdef['activation'] == 'swish':
                 modules.add_module('activation', Swish())
             # 在此处可以添加新的激活函数
+        elif mdef['type'] == 'acconv':
+            # ACNet只替换3*3卷积即可，size=3,stride=1,padding=1
+
+            # def __init__(self,  in_channels,  out_channels,  kernel_size,  stride=1,  padding=0,  dilation=1,  groups=1, padding_mode='zeros', deploy=False):
+
+            filters = int(mdef['filters'])
+            size = int(mdef['size'])
+            # pad = (size + 1) // 2 if int(mdef['pad']) else 0
+            modules.add_module(
+                'acconv',
+                Conv2dBNReLU(in_channels=output_filters[-1],
+                                     out_channels=filters,
+                                     kernel_size=3,
+                                     stride=1,
+                                     padding=1))
 
         elif mdef['type'] == 'maxpool':
             # 最大池化操作
@@ -614,7 +792,7 @@ class Darknet(nn.Module):
 
             if mtype in [
                     'convolutional', 'upsample', 'maxpool', 'se',
-                    'dilatedconv', 'ppm'
+                    'dilatedconv', 'ppm', 'acconv'
             ]:
                 x = module(x)
             elif mtype == 'route':

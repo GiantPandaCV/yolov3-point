@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from . import torch_utils  # , google_utils
 
+matplotlib.use('Agg')
 matplotlib.rc('font', **{'size': 11})
 
 # Set printoptions
@@ -486,15 +487,16 @@ def compute_loss(p, targets, model):
 
     if red == 'sum':
         bs = tobj.shape[0]  # batch size
-        lobj *= 2 / (676 * bs) * 2  # 3 / np * 2
-        # from 6300 to 676
+        lobj *= 2 / (2535 * bs) * 2  # 3 / np * 2
+        # from 6300 to (13**2+26**2)*3 = 2535
         # 3代表3个yolo层
         if ng:
             lcls *= 3 / ng / model.nc
             lbox *= 3 / ng
 
     loss = lbox + lobj + lcls
-    return loss, torch.cat((lbox, lobj, lcls, loss)).detach(), temp_loss
+    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
+    #, temp_loss
 
 
 def build_targets(model, targets):

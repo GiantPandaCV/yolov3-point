@@ -85,11 +85,11 @@ def test(
         _, _, height, width = imgs.shape  # batch size, channels, height, width
 
         # Plot images with bounding boxes
-        if batch_i == 0 and not os.path.exists('test_batch0.jpg'):
+        if batch_i == 0 and not os.path.exists('test_batch0.png'):
             plot_images(imgs=imgs,
                         targets=targets,
                         paths=paths,
-                        fname='test_batch0.jpg')
+                        fname='test_batch0.png')
 
         # Disable gradients
         with torch.no_grad():
