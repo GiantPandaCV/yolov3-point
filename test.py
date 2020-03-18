@@ -2,10 +2,54 @@ import argparse
 import json
 
 from torch.utils.data import DataLoader
+import cv2
 
 from models import *
 from utils.datasets import *
 from utils.utils import *
+from tiny_classifier.model import TinyModel
+
+
+def apply_tiny_classifier(x, model, img, paths):
+    # applies a second stage classifier to yolo outputs
+
+    for i, d in enumerate(x):  # per image
+        # print(paths[i])
+        im0 = cv2.imread(paths[i])
+        if d is not None and len(d):
+            d = d.clone()
+            # Reshape and pad cutouts
+            b = xyxy2xywh(d[:, :4])  # boxes
+            b[:, 2:] = b[:, 2:].max(1)[0].unsqueeze(1)  # rectangle to square
+            b[:, 2:] = b[:, 2:] * 1.3 + 30  # pad
+            d[:, :4] = xywh2xyxy(b).long()
+
+            # Rescale boxes from img_size to im0 size
+            scale_coords(img.shape[2:], d[:, :4], im0.shape)  # ori: im0[i].shape
+
+            # Classes
+            pred_cls1 = d[:, 5].long()
+            ims = []
+            for j, a in enumerate(d):  # per item
+                # print(j,'===',a)
+                cutout = im0[int(a[1]):int(a[3]), int(a[0]):int(a[2])]
+                im = cv2.resize(cutout, (21, 21))  # BGR 224 to 21
+                # cv2.imwrite('test%i.jpg' % j, cutout)
+
+                im = im[:, :, ::-1].transpose(2, 0,
+                                              1)  # BGR to RGB, to 3x416x416
+                im = np.ascontiguousarray(im,
+                                          dtype=np.float32)  # uint8 to float32
+                im /= 255.0  # 0 - 255 to 0.0 - 1.0
+                ims.append(im)
+
+            pred_cls2 = model(torch.Tensor(ims).to(d.device)).argmax(
+                1)  # classifier prediction
+            # print(pred_cls1, pred_cls2)
+            x[i] = x[i][pred_cls1 ==
+                        pred_cls2]  # retain matching class detections
+
+    return x
 
 
 def test(
@@ -18,7 +62,8 @@ def test(
         iou_thres=0.5,  # for nms
         save_json=False,
         model=None,
-        dataloader=None):
+        dataloader=None,
+        classify=True):
     # Initialize/load model and set device
     if model is None:
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
@@ -37,6 +82,7 @@ def test(
             model.load_state_dict(
                 torch.load(weights, map_location=device)['model'])
         else:  # darknet format
+            print(weights)
             _ = load_darknet_weights(model, weights)
 
         if torch.cuda.device_count() > 1:
@@ -54,6 +100,13 @@ def test(
                           10).to(device)  # iou vector for mAP@0.5:0.95
     iouv = iouv[0].view(1)  # comment for mAP@0.5:0.95
     niou = iouv.numel()
+
+    if classify:
+        modelc = TinyModel(num_classes=2)
+        modelc.load_state_dict(
+            torch.load("tiny_classifier/checkpoints/epoch_90_0.955.pt",
+                       map_location='cpu'))
+        modelc.to(device).eval()
 
     # Dataloader
     if dataloader is None:
@@ -104,7 +157,18 @@ def test(
             # Run NMS
             output = non_max_suppression(inf_out,
                                          conf_thres=conf_thres,
-                                         iou_thres=iou_thres)
+                                         iou_thres=iou_thres,
+                                         multi_cls=True,
+                                         images=imgs,
+                                         targets=targets)
+
+            if classify:
+                output = apply_tiny_classifier(
+                    output,
+                    modelc,
+                    imgs,
+                    paths,
+                )
 
         # Statistics per image
         for si, pred in enumerate(output):
@@ -244,15 +308,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/yolov3-tiny-6a.cfg',
+                        default='dt-6a-spp.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
-                        default='data/dimtargetSingle.data',
+                        default='data/voc.data',
                         help='*.data path')
     parser.add_argument('--weights',
                         type=str,
-                        default='weights/best.pt',
+                        default='./weights/best.pt',
                         help='path to weights file')
     parser.add_argument('--batch-size',
                         type=int,
@@ -264,11 +328,11 @@ if __name__ == '__main__':
                         help='inference size (pixels)')
     parser.add_argument('--conf-thres',
                         type=float,
-                        default=0.25,
+                        default=0.1,
                         help='object confidence threshold')
     parser.add_argument('--iou-thres',
                         type=float,
-                        default=0.5,
+                        default=0.3,
                         help='IOU threshold for NMS')
     parser.add_argument('--save-json',
                         action='store_true',

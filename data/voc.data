@@ -1,6 +1,6 @@
 classes = 1
 train = ./data/2007_train.txt 
-valid = ./data/2007_test.txt 
+valid = ./data/2007_train.txt 
 names = ./data/voc.names
 backup = backup/
 eval = voc

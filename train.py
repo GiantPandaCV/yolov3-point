@@ -10,7 +10,7 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -22,6 +22,31 @@ wdir = 'weights' + os.sep  # weights dir
 last = wdir + 'last.pt'
 best = wdir + 'best.pt'
 results_file = 'results.txt'
+'''
+for reproduce
+'''
+
+# hyp = {
+#     'giou': 1.48,  # giou loss gain
+#     'cls': 24.6,  # cls loss gain
+#     'cls_pw': 1.0,  # cls BCELoss positive_weight
+#     'obj': 392,  #64.35,#1,#49.5,  
+#     # obj loss gain (*=img_size/320 if img_size != 320)
+#     'obj_pw': 1.0,  # obj BCELoss positive_weight
+#     'iou_t': 0.136,  # iou training threshold   
+#     'lr0': 0.00807,  # initial learning rate (SGD=1E-3, Adam=9E-5)
+#     'lrf': -4.,  # final LambdaLR learning rate = lr0 * (10 ** lrf)
+#     'momentum': 0.963,  # SGD momentum
+#     'weight_decay': 0.000252,  # optimizer weight decay
+#     'fl_gamma': 0.5,  #0.5,  # focal loss gamma
+#     'hsv_h': 0.00704,  # image HSV-Hue augmentation (fraction)
+#     'hsv_s': 0.638,  # image HSV-Saturation augmentation (fraction)
+#     'hsv_v': 0.476,  # image HSV-Value augmentation (fraction)
+#     'degrees': 0.77,  # image rotation (+/- deg)
+#     'translate': 0.0302,  # image translation (+/- fraction)
+#     'scale': 0.058,  # image scale (+/- gain)
+#     'shear': 0.407
+# }
 
 # Hyperparameters (results68: 59.2 mAP@0.5 yolov3-spp-416) https://github.com/ultralytics/yolov3/issues/310
 
@@ -68,7 +93,7 @@ def train():
         hyp['obj_pw'] = 1.
 
     # Initialize
-    init_seeds()
+    init_seeds(0)
     if opt.multi_scale:
         img_sz_min = round(img_size / 32 / 1.5)
         img_sz_max = round(img_size / 32 * 1.5)
@@ -167,16 +192,17 @@ def train():
         gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
-    # # Plot lr schedule
-    # y = []
-    # for _ in range(epochs):
-    #     scheduler.step()
-    #     y.append(optimizer.param_groups[0]['lr'])
-    # plt.plot(y, label='LambdaLR')
-    # plt.xlabel('epoch')
-    # plt.ylabel('LR')
-    # plt.tight_layout()
-    # plt.savefig('LR.png', dpi=300)
+    # Plot lr schedule
+    y = []
+    for _ in range(epochs):
+        scheduler.step()
+        y.append(optimizer.param_groups[0]['lr'])
+
+    plt.plot(y, label='LambdaLR')
+    plt.xlabel('epoch')
+    plt.ylabel('LR')
+    plt.tight_layout()
+    plt.savefig('LR.png', dpi=300)
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -190,7 +216,7 @@ def train():
         dist.init_process_group(
             backend='nccl',  # 'distributed backend'
             init_method=
-            'tcp://127.0.0.1:9999',  # distributed training init method
+            'tcp://127.0.0.1:9998',  # distributed training init method
             world_size=1,  # number of nodes for distributed training
             rank=0)  # distributed training node rank
         model = torch.nn.parallel.DistributedDataParallel(
@@ -202,7 +228,7 @@ def train():
         train_path,
         img_size,
         batch_size,
-        augment=True,
+        augment=False,
         hyp=hyp,  # augmentation hyperparameters
         rect=opt.rect,  # rectangular training
         cache_labels=True,
@@ -211,15 +237,15 @@ def train():
     # Dataloader
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0,
-              8])  # number of workers change from 8 to 1 to debug
+              1])  # number of workers change from 8 to 1 to debug
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=nw,
-        shuffle=not opt.
-        rect,  # Shuffle=True unless rectangular training is used
+        num_workers=1,
+        shuffle=not opt.rect,  # Shuffle=True unless rectangular training is used
         pin_memory=True,
-        collate_fn=dataset.collate_fn)
+        collate_fn=dataset.collate_fn)  #,
+    # worker_init_fn=_init_fn)
 
     # Testloader
     testloader = torch.utils.data.DataLoader(LoadImagesAndLabels(
@@ -231,9 +257,10 @@ def train():
         cache_labels=True,
         cache_images=opt.cache_images),
                                              batch_size=batch_size * 2,
-                                             num_workers=nw,
+                                             num_workers=1,
                                              pin_memory=True,
-                                             collate_fn=dataset.collate_fn)
+                                             collate_fn=dataset.collate_fn)  #,
+    #  worker_init_fn=_init_fn)
 
     # Start training
     nb = len(dataloader)
@@ -248,16 +275,12 @@ def train():
         0, 0, 0, 0, 0, 0, 0
     )  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     t0 = time.time()
-    torch_utils.model_info(model, report='summary')  # 'full' or 'summary'
+    torch_utils.model_info(model, report='full')  # 'full' or 'summary'
     print('Using %g dataloader workers' % nw)
     print('Starting training for %g epochs...' % epochs)
 
-
-
     min_min = 1000
     max_max = -1000
-
-
 
     for epoch in range(start_epoch - 1 if opt.prebias else start_epoch,
                        epochs):  # epoch ------------------------------
@@ -512,17 +535,17 @@ def train():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=273)
+    parser.add_argument('--epochs', type=int, default=30)
     # 500200 batches at bs 16, 117263 COCO images = 273 epochs
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=16)
     # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate',
                         type=int,
-                        default=2,
+                        default=1,
                         help='batches to accumulate before optimizing')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/dt-6a-spp-RF.cfg',
+                        default='cfg/yolov3-tiny-6a.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,

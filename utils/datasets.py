@@ -13,6 +13,7 @@ import torch
 from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from utils.utils import multi_gray_measure
 
 from utils.utils import xyxy2xywh, xywh2xyxy
 
@@ -25,6 +26,8 @@ for orientation in ExifTags.TAGS.keys():
     if ExifTags.TAGS[orientation] == 'Orientation':
         break
 
+np.random.seed(0)
+random.seed(0)
 
 def exif_size(img):
     # Returns exif-corrected PIL size
@@ -376,7 +379,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         l = np.array(
                             [x.split() for x in f.read().splitlines()],
                             dtype=np.float32)
-                except:
+                except: 
                     nm += 1  # print('missing labels for image %s' % self.img_files[i])  # file missing
                     continue
 
@@ -473,7 +476,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         label_path = self.label_files[index]
 
         hyp = self.hyp
-        mosaic = True and self.augment
+        mosaic = False and self.augment
         # 如果开启镶嵌增强、数据增强
         # 加载四张图片，作为一个镶嵌，具体看下文解析。
         if mosaic:
@@ -608,11 +611,11 @@ def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
 
 def load_mosaic(self, index):
     # loads images in a mosaic
-
     labels4 = []
     s = self.img_size
     xc, yc = [int(random.uniform(s * 0.5, s * 1.5))
               for _ in range(2)]  # mosaic center x, y
+
     img4 = np.zeros(
         (s * 2, s * 2, 3), dtype=np.uint8) + 128  # base image with 4 tiles
     indices = [index

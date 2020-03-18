@@ -88,6 +88,7 @@ def detect(save_img=False):
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
 
+        print(img.shape, im0s.shape)
         # Apply Classifier
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
@@ -156,7 +157,7 @@ def detect(save_img=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='*.cfg path')
-    parser.add_argument('--names', type=str, default='data/coco.names', help='*.names path')
+    parser.add_argument('--names', type=str, default='data/voc.names', help='*.names path')
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp.weights', help='path to weights file')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder

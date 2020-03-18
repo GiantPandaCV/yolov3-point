@@ -13,11 +13,17 @@ import torch
 import torch.nn as nn
 import torchvision
 from tqdm import tqdm
+from PIL import Image, ImageStat
+
+# from show_img_bbox import plot_one_box
 
 from . import torch_utils  # , google_utils
 
 matplotlib.use('Agg')
 matplotlib.rc('font', **{'size': 11})
+
+random.seed(0)
+np.random.seed(0)
 
 # Set printoptions
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
@@ -36,6 +42,9 @@ def floatn(x, n=3):  # format floats to n decimals
 def init_seeds(seed=0):
     random.seed(seed)
     np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(0)
+
     torch_utils.init_seeds(seed=seed)
 
 
@@ -237,12 +246,18 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
                 ap[ci, j] = compute_ap(recall[:, j], precision[:, j])
 
             # Plot
-            # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-            # ax.plot(np.concatenate(([0.], recall)), np.concatenate(([0.], precision)))
-            # ax.set_title('YOLOv3-SPP'); ax.set_xlabel('Recall'); ax.set_ylabel('Precision')
-            # ax.set_xlim(0, 1)
-            # fig.tight_layout()
-            # fig.savefig('PR_curve.png', dpi=300)
+            fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+            # print("recall:", recall.shape)
+            ax.plot(recall, precision)
+            # ax.plot(np.concatenate(([0.], recall[-1])), np.concatenate(([0.], precision[-1])))
+            ax.set_title('YOLOv3-SPP')
+            ax.set_xlabel('Recall')
+            ax.set_ylabel('Precision')
+            ax.set_xlim(0, 1)
+            fig.tight_layout()
+            fig.savefig('PR_curve.png', dpi=300)
+
+            plt.close()
 
     # Compute F1 score (harmonic mean of precision and recall)
     f1 = 2 * p * r / (p + r + 1e-16)
@@ -268,7 +283,7 @@ def compute_ap(recall, precision):
     mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
 
     # Integrate area under curve
-    method = 'interp'  # methods: 'continuous', 'interp'
+    method = 'continuous'  # methods: 'continuous', 'interp'
     if method == 'interp':
         x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
         ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
@@ -374,23 +389,35 @@ class FocalLoss(nn.Module):
         super(FocalLoss, self).__init__()
         # loss_fcn.reduction = 'none'  # required to apply FL to each element
         self.loss_fcn = loss_fcn
-        self.gamma = 2#gamma
-        self.alpha = alpha
+        self.gamma = gamma  # 让易分样本降低对CNN的影响
+        self.alpha = alpha  # 跟类别数一致，正负样本不平衡问题
+        # gamma alpha
+        # 2.5   1   0 - nan
+        # 2     1   1 - -inf
+        # 1.5   1   0 - nan
+        # 1     1   正常运行
+        # 1.1   1   0-nan
+        # 1     1.5 可收敛
+        # 1     2   可收敛
+        # 1     5
+        # 0.9   1   0 - nan
+        # 1     0.5 可收敛
+
         self.reduction = loss_fcn.reduction
         self.loss_fcn.reduction = 'none'
         ## required to apply FL to each element
 
     def forward(self, input, target):
         loss = self.loss_fcn(input, target)
-        print("focal loss forward(max and min):", loss.max().item(), loss.min().item())
+
+        # log_p = probs.log()
+        # batch_loss = -alpha*(torch.pow((1-probs), self.gamma))*log_p
 
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
         # non-zero power for gradient stability
         if self.reduction == 'mean':
-            print("mean", loss.mean().item())
             return loss.mean()
         elif self.reduction == 'sum':
-            print("sum:", loss.sum().item())
             return loss.sum()
         else:  # 'none'
             return loss
@@ -417,6 +444,7 @@ def compute_loss(p, targets, model):
         g = h['fl_gamma']
         BCEcls, BCEobj, BCE, CE = FocalLoss(BCEcls, g), FocalLoss(
             BCEobj, g), FocalLoss(BCE, g), FocalLoss(CE, g)
+        # BCEobj = FocalLoss(BCEobj, g)
 
     # Compute losses
     np, ng = 0, 0  # number grid points, targets
@@ -438,10 +466,12 @@ def compute_loss(p, targets, model):
             pxy = torch.sigmoid(
                 ps[:, 0:2]
             )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
+
             pwh = torch.exp(ps[:, 2:4]).clamp(max=1E3) * anchor_vec[i]
             pbox = torch.cat((pxy, pwh), 1)  # predicted box
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
                             GIoU=True)  # giou computation
+
             lbox += (1.0 - giou).sum() if red == 'sum' else (
                 1.0 - giou).mean()  # giou loss
             tobj[b, a, gj, gi] = giou.detach().type(tobj.dtype)
@@ -477,10 +507,6 @@ def compute_loss(p, targets, model):
                 t[b, a, gj, gi] = tcls[i] + 1
             lcls += CE(pi[..., 4:].view(-1, model.nc + 1), t.view(-1))
 
-    # print('lobj' , (lobj.item()))
-
-    temp_loss = lobj
-
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
@@ -496,7 +522,6 @@ def compute_loss(p, targets, model):
 
     loss = lbox + lobj + lcls
     return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
-    #, temp_loss
 
 
 def build_targets(model, targets):
@@ -562,12 +587,73 @@ def build_targets(model, targets):
     return tcls, tbox, indices, av
 
 
+def tensor_to_PIL(tensor):
+    image = tensor.cpu().clone()
+    unloader = torchvision.transforms.ToPILImage()
+    image = unloader(image)
+    return image
+
+
+def brightness(tensor_image):
+    image = tensor_to_PIL(
+        tensor_image
+    )  #Image.fromarray(cv2.cvtColor(cv2_image.numpy(),cv2.COLOR_BGR2RGB))
+    im = image.convert('L')
+    stat = ImageStat.Stat(im)
+    return stat.mean[0]
+
+
+def brightness_thresh(tensor_image, num_thresh: int):
+    '''
+    获取大于某个阈值的像素的个数
+    '''
+    image = tensor_to_PIL(tensor_image)
+    img_data = np.asarray(image)
+    _tmp = np.where(img_data > num_thresh)[0]
+    return len(_tmp)
+
+
+def calc_brightness(image, dc, bright_thres=None):
+    """[summary]
+    
+    Arguments:
+        image {[tensor]} -- [description]
+        dc {[tensor]} -- [x1,y1,x2,y2,c,c]
+    
+    Returns:
+        temp_dc[tensor] -- [x1,y1,x2,y2,c,c,score,brightness]
+    """
+    temp_dc = []
+    for item in dc:
+        x1, y1, x2, y2, _, cc = item
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        cutted_img = image[:, y1:y2, x1:x2]
+        # bright = brightness(cutted_img)
+        num_bright = brightness_thresh(cutted_img, num_thresh=200)
+        print("num of bright:", num_bright)
+        # temp_dc.append([*item, bright / 255.0 + cc, bright])
+        temp_dc.append([*item, num_bright / 255.0 + cc, num_bright])
+
+    # sort temp_dc by brightness and confidence
+    temp_dc = torch.Tensor(temp_dc)
+    temp_dc = temp_dc[temp_dc[:, 6].argsort(descending=True)]
+    temp_dc = temp_dc.cuda() if torch.cuda.is_available() else temp_dc
+
+    # 通过brightness滤除一部分
+    if bright_thres:
+        temp_dc = temp_dc[temp_dc[:, 7] >
+                          bright_thres]  #temp_dc[temp_dc[:, 7] > bright_thres]
+    return temp_dc
+
+
 def non_max_suppression(prediction,
                         conf_thres=0.5,
                         iou_thres=0.5,
                         multi_cls=True,
                         classes=None,
-                        agnostic=False):
+                        agnostic=False,
+                        images=None,
+                        targets=None):
     """
     Removes detections with lower object confidence score than 'conf_thres'
     Non-Maximum Suppression to further filter detections.
@@ -577,13 +663,54 @@ def non_max_suppression(prediction,
     # NMS methods https://github.com/ultralytics/yolov3/issues/679 'or', 'and', 'merge', 'vision', 'vision_batch'
 
     # Box constraints
-    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
+    min_wh, max_wh = 2, 43  # from 4096 to 43
+    # (pixels) minimum and maximum box width and height
 
     method = 'or'
+    #                mAP+F1
+    # 'or'          92.7+94.3
+    # 'and'         92.7+94.3
+    # 'merge'       92.7+94.2
+    # 'soft'        92.7+94.3
+    # 'brightness'  92.6+94.2
+    # 'vision'
+    # 'vision_batch'
+    # images = images.cpu()
     output = [None] * len(prediction)
     for image_i, pred in enumerate(prediction):
+
+        # 生成随机数用于命名
+        # _randint = random.randint(0, 100000)
+
         # Apply conf constraint
         pred = pred[pred[:, 4] > conf_thres]
+
+        # 得到对应的img图片内容
+
+        # img = images[image_i]
+        # pil_img = torchvision.transforms.functional.to_pil_image(img)
+        # cv2_img = cv2.cvtColor(np.asarray(pil_img), cv2.COLOR_RGB2BGR)
+        # outimg = multi_gray_measure(cv2_img)
+        # outimg = outimg[..., np.newaxis]
+        # outimg = np.repeat(outimg, 3, axis=2)
+        # outimg = torchvision.transforms.functional.to_tensor(outimg)
+        '''
+        # if images is not None:
+        img = images[image_i]
+        _pil_img = tensor_to_PIL(img)
+        tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
+        img_h, img_w, _ = tmp_img.shape
+
+        # if targets is not None:
+        
+        target = targets[image_i]
+        _, _, cx, cy, w, h = target
+        w, h = float(w) * img_w, float(h) * img_h
+        cx, cy = float(cx) * img_w, float(cy) * img_h
+        _box = [cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2]
+        plot_one_box(_box, tmp_img, color=[0, 0, 255], line_thickness=4)
+        cv2.imwrite("./gt_%05d.jpg" % _randint, tmp_img)
+        '''
 
         # Apply width-height constraint
         pred = pred[(pred[:, 2:4] > min_wh).all(1)
@@ -599,6 +726,21 @@ def non_max_suppression(prediction,
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(pred[:, :4])
+        '''
+        # 画图-在conf_thres筛选之后
+        # _pil_img = tensor_to_PIL(img)
+        # tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
+        tmp_before_nms_img = tmp_img
+        for _pred in pred:
+            cx, cy, w, h, _, score = _pred
+            _box = [cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2]
+            # print(type(_box),type(tmp_img))
+            plot_one_box(_box,
+                         tmp_before_nms_img,
+                         label="%.2f" % (score),
+                         color=[0, 255, 0])
+        cv2.imwrite("./Before_NMS_%05d.jpg" % _randint, tmp_before_nms_img)
+        '''
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_cls:
@@ -639,6 +781,7 @@ def non_max_suppression(prediction,
         for c in cls.unique():
             dc = pred[cls == c]  # select class c
             n = len(dc)
+            # print("num of dc:",n)
             if n == 1:
                 det_max.append(dc)  # No NMS required if only 1 prediction
                 continue
@@ -651,14 +794,6 @@ def non_max_suppression(prediction,
                     dc[:, :4], dc[:, 4], iou_thres)])
 
             elif method == 'or':  # default
-                # METHOD1
-                # ind = list(range(len(dc)))
-                # while len(ind):
-                # j = ind[0]
-                # det_max.append(dc[j:j + 1])  # save highest conf detection
-                # reject = (bbox_iou(dc[j], dc[ind]) > iou_thres).nonzero()
-                # [ind.pop(i) for i in reversed(reject)]
-
                 # METHOD2
                 while dc.shape[0]:
                     det_max.append(dc[:1])  # save highest conf detection
@@ -673,6 +808,25 @@ def non_max_suppression(prediction,
                     if iou.max() > 0.5:
                         det_max.append(dc[:1])
                     dc = dc[1:][iou < iou_thres]  # remove ious > threshold
+
+            elif method == 'brightness':
+                # METHOD2
+                if images is None:
+                    print("Image is None.")
+                else:
+                    # 计算brightness均值
+                    temp_dc = calc_brightness(outimg, dc, bright_thres=None)
+                    while temp_dc.shape[0]:
+                        det_max.append(temp_dc[:1])
+                        # save highest conf detection
+                        if len(temp_dc) == 1:
+                            # Stop if we're at the last detection
+                            break
+                        iou = bbox_iou(temp_dc[0], temp_dc[1:])
+                        # iou with other boxes
+                        temp_dc = temp_dc[1:][iou < iou_thres]
+                        # remove ious > threshold
+                        temp_dc = temp_dc
 
             elif method == 'merge':  # weighted mixture box
                 while len(dc):
@@ -698,7 +852,27 @@ def non_max_suppression(prediction,
                     dc = dc[
                         dc[:, 4] >
                         conf_thres]  # https://github.com/ultralytics/yolov3/issues/362
-
+        # 画 after nms
+        # _pil_img = tensor_to_PIL(img)
+        # tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
+        '''
+        tmp_after_nms_img = tmp_img
+        if len(det_max):
+            for i in range(len(det_max)):
+                # print(det_max[i].shape)
+                _det = det_max[i][0]
+                x1, y1, x2, y2, c, score = _det
+                _c = [x1, y1, x2, y2]
+                plot_one_box(_box,
+                             tmp_after_nms_img,
+                             label="%.2f" % (c),
+                             color=[255, 0, 0])
+            cv2.imwrite("./After_NMS_%d.jpg" % _randint, tmp_after_nms_img)
+        else:
+            print("Nothing detected.")
+            cv2.imwrite("./NothingDetected_%d.jpg" % _randint,
+                        tmp_after_nms_img)
+        '''
         if len(det_max):
             det_max = torch.cat(det_max)  # concatenate
             output[image_i] = det_max[(-det_max[:, 4]).argsort()]  # sort
@@ -993,21 +1167,26 @@ def fitness(x):
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(
-        0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line thickness
-    color = color or [random.randint(0, 255) for _ in range(3)]
+        0.002 * (img.shape[0] + img.shape[1]) / 2)  # line thickness
+    color = color if color is not None else [
+        random.randint(0, 255) for _ in range(3)
+    ]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    # print(type(color))
     cv2.rectangle(img, c1, c2, color, thickness=tl)
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-        cv2.rectangle(img, c1, c2, color, -1)  # filled
-        cv2.putText(img,
-                    label, (c1[0], c1[1] - 2),
-                    0,
-                    tl / 3, [225, 255, 255],
-                    thickness=tf,
-                    lineType=cv2.LINE_AA)
+        # cv2.rectangle(img, c1, c2, color, -1)  # filled
+        cv2.putText(
+            img,
+            label,
+            (c1[0] + random.randint(4, 80), c1[1] - 2 + random.randint(4, 80)),
+            0,
+            tl / 4, [225, 255, 255],
+            thickness=tf,
+            lineType=cv2.LINE_AA)
 
 
 def plot_wh_methods():  # from utils.utils import *; plot_wh_methods()
@@ -1184,3 +1363,49 @@ def plot_results(start=0, stop=0, bucket='',
     fig.tight_layout()
     ax[1].legend()
     fig.savefig('results.png', dpi=200)
+
+
+def multi_gray_measure(img: np.ndarray):
+    shape = img.shape
+    row, col, c = shape
+    if c > 1:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    img = img.astype(np.float64)
+    img *= 1 / 255.0
+
+    ave_filted = []
+
+    I3 = cv2.blur(img, ksize=(3, 3))
+    I5 = cv2.blur(img, ksize=(5, 5))
+    I7 = cv2.blur(img, ksize=(7, 7))
+    I9 = cv2.blur(img, ksize=(9, 9))
+    I11 = cv2.blur(img, ksize=(11, 11))
+
+    H3 = I3 - I11
+    H5 = I5 - I11
+    H7 = I7 - I11
+    H9 = I9 - I11
+
+    H3 = np.maximum(H3, 0)
+    H5 = np.maximum(H5, 0)
+    H7 = np.maximum(H7, 0)
+    H9 = np.maximum(H9, 0)
+
+    H_list = []
+
+    H3 = np.multiply(H3, H3)
+    H5 = np.multiply(H5, H5)
+    H7 = np.multiply(H7, H7)
+    H9 = np.multiply(H9, H9)
+
+    H_list.append(H3)
+    H_list.append(H5)
+    H_list.append(H7)
+    H_list.append(H9)
+
+    H_numpy = np.array(H_list)
+    out = np.max(H_numpy, axis=0)
+    out = out.astype(np.float64)
+    cv2.normalize(out, out, 0.0, 1.0, cv2.NORM_MINMAX)
+    out = np.float32(out) * 255.0
+    return out
