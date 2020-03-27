@@ -2166,8 +2166,7 @@ def create_grids(self,
 
     # 处理anchor，将其除以下采样倍数
     self.anchor_vec = self.anchors.to(device) / self.stride
-    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1,
-                                          2).to(device).type(type)
+    self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device).type(type)
     self.ng = torch.Tensor(ng).to(device)
     self.nx = nx
     self.ny = ny

@@ -541,11 +541,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         if nL:
             # 将 xyxy 格式转化为 xywh 格式
-            labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])
+            labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])# x1, y1, x2, y2
 
             # 归一化到0-1之间
-            labels[:, [2, 4]] /= img.shape[0]  # height
-            labels[:, [1, 3]] /= img.shape[1]  # width
+            labels[:, [2, 4]] /= img.shape[0]  # height y1/h , y2/h
+            labels[:, [1, 3]] /= img.shape[1]  # width  x1/h , x2/h
 
         if self.augment:
             # 随机左右翻转

@@ -198,11 +198,11 @@ def train():
         scheduler.step()
         y.append(optimizer.param_groups[0]['lr'])
 
-    plt.plot(y, label='LambdaLR')
-    plt.xlabel('epoch')
-    plt.ylabel('LR')
-    plt.tight_layout()
-    plt.savefig('LR.png', dpi=300)
+    # plt.plot(y, label='LambdaLR')
+    # plt.xlabel('epoch')
+    # plt.ylabel('LR')
+    # plt.tight_layout()
+    # plt.savefig('LR.png', dpi=300)
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -275,7 +275,7 @@ def train():
         0, 0, 0, 0, 0, 0, 0
     )  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     t0 = time.time()
-    torch_utils.model_info(model, report='full')  # 'full' or 'summary'
+    # torch_utils.model_info(model, report='full')  # 'full' or 'summary'
     print('Using %g dataloader workers' % nw)
     print('Starting training for %g epochs...' % epochs)
 
@@ -537,7 +537,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=30)
     # 500200 batches at bs 16, 117263 COCO images = 273 epochs
-    parser.add_argument('--batch-size', type=int, default=16)
+    parser.add_argument('--batch-size', type=int, default=2)
     # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate',
                         type=int,
@@ -545,11 +545,11 @@ if __name__ == '__main__':
                         help='batches to accumulate before optimizing')
     parser.add_argument('--cfg',
                         type=str,
-                        default='cfg/yolov3-tiny-6a.cfg',
+                        default='cfg/yolov3-1cls.cfg',
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
-                        default='data/dimtargetSingle.data',
+                        default='data/voc.data',
                         help='*.data path')
     parser.add_argument('--multi-scale',
                         action='store_true',
