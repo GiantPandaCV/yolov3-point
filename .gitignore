@@ -4,5 +4,3 @@ runs/*
 *.jpg
 *.weights
 *.pt
-*.jpg
-*.png
