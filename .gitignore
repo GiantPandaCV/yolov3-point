@@ -1,7 +1,8 @@
-
 *.pyc
 runs/*
 *.json
 *.jpg
 *.weights
 *.pt
+*.jpg
+*.png
