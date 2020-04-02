@@ -1873,7 +1873,7 @@ def create_modules_darknext(module_defs, img_size, arc):
 
         elif mdef['type'] == 'spatialAttention':
             sa = SpatialAttention(kernel_size=int(mdef['kernelsize']))
-            modules.add_module('channel_attention', ca)
+            modules.add_module('channel_attention', sa)
 
         elif mdef['type'] == 'ppm':
             ppm = PSPModule(output_filters[-1], int(mdef['out']))
