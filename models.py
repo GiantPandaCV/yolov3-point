@@ -24,6 +24,7 @@ def create_modules(module_defs, img_size, arc):
 
     for i, mdef in enumerate(module_defs):
         modules = nn.Sequential()
+        module_i=i
         '''
         通过type字样不同的类型，来进行模型构建
         '''
@@ -344,35 +345,6 @@ def create_modules(module_defs, img_size, arc):
 
     return module_list, routs
 
-
-class SwishImplementation(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, i):
-        ctx.save_for_backward(i)
-        return i * torch.sigmoid(i)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        sigmoid_i = torch.sigmoid(ctx.saved_variables[0])
-        return grad_output * (sigmoid_i * (1 + ctx.saved_variables[0] *
-                                           (1 - sigmoid_i)))
-
-
-class MemoryEfficientSwish(nn.Module):
-    def forward(self, x):
-        return SwishImplementation.apply(x)
-
-
-class Swish(nn.Module):
-    def forward(self, x):
-        return x.mul_(torch.sigmoid(x))
-
-
-class Mish(nn.Module):  # https://github.com/digantamisra98/Mish
-    def forward(self, x):
-        return x.mul_(F.softplus(x).tanh())
-
-
 class YOLOLayer(nn.Module):
     def __init__(self, anchors, nc, img_size, yolo_index, arc):
         super(YOLOLayer, self).__init__()
@@ -584,6 +556,7 @@ def create_modules_darknext(module_defs, img_size, arc):
         '''
         通过type字样不同的类型，来进行模型构建
         '''
+        module_i = i
         if mdef['type'] == 'convolutional':
             bn = int(mdef['batch_normalize'])
             filters = int(mdef['filters'])
