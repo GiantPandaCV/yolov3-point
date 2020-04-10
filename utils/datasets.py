@@ -597,8 +597,8 @@ def load_image(self, index):
                              interpolation=interp)
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
-        return self.imgs[index], self.img_hw0[index], self.img_hw[
-            index]  # img, hw_original, hw_resized
+        return self.imgs[index], self.img_hw0[index], self.img_hw[index]  
+        # img, hw_original, hw_resized
 
 
 def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
