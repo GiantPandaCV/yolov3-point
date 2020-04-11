@@ -13,12 +13,11 @@ import torch
 import torch.nn as nn
 import torchvision
 from tqdm import tqdm
-import matplotlib 
 
-matplotlib.use('Agg')
 
 from . import torch_utils  # , google_utils
 
+matplotlib.use('Agg')
 matplotlib.rc('font', **{'size': 11})
 
 # Set printoptions
