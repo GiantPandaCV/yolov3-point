@@ -63,7 +63,7 @@ def test(
         save_json=False,
         model=None,
         dataloader=None,
-        classify=True):
+        classify=False):
     # Initialize/load model and set device
     if model is None:
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
@@ -158,9 +158,10 @@ def test(
             output = non_max_suppression(inf_out,
                                          conf_thres=conf_thres,
                                          iou_thres=iou_thres,
-                                         multi_cls=True,
-                                         images=imgs,
-                                         targets=targets)
+                                         multi_cls=False)
+                                        #  ,
+                                        #  images=imgs,
+                                        #  targets=targets)
 
             if classify:
                 output = apply_tiny_classifier(
@@ -179,7 +180,7 @@ def test(
 
             if pred is None:
                 if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool),
+                    stats.append((torch.zeros(0, niou, dtype=torch.uint8),
                                   torch.Tensor(), torch.Tensor(), tcls))
                 continue
 

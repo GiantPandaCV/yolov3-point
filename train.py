@@ -10,7 +10,8 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -535,13 +536,13 @@ def train():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--epochs', type=int, default=273)
     # 500200 batches at bs 16, 117263 COCO images = 273 epochs
-    parser.add_argument('--batch-size', type=int, default=2)
+    parser.add_argument('--batch-size', type=int, default=16)
     # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate',
                         type=int,
-                        default=1,
+                        default=4,
                         help='batches to accumulate before optimizing')
     parser.add_argument('--cfg',
                         type=str,
@@ -549,7 +550,7 @@ if __name__ == '__main__':
                         help='*.cfg path')
     parser.add_argument('--data',
                         type=str,
-                        default='data/voc.data',
+                        default='data/dimtargetSingle.data',
                         help='*.data path')
     parser.add_argument('--multi-scale',
                         action='store_true',

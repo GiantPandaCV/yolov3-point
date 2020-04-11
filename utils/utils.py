@@ -13,17 +13,13 @@ import torch
 import torch.nn as nn
 import torchvision
 from tqdm import tqdm
-from PIL import Image, ImageStat
+import matplotlib 
 
-# from show_img_bbox import plot_one_box
+matplotlib.use('Agg')
 
 from . import torch_utils  # , google_utils
 
-matplotlib.use('Agg')
 matplotlib.rc('font', **{'size': 11})
-
-random.seed(0)
-np.random.seed(0)
 
 # Set printoptions
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
@@ -42,9 +38,6 @@ def floatn(x, n=3):  # format floats to n decimals
 def init_seeds(seed=0):
     random.seed(seed)
     np.random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(0)
-
     torch_utils.init_seeds(seed=seed)
 
 
@@ -246,18 +239,12 @@ def ap_per_class(tp, conf, pred_cls, target_cls):
                 ap[ci, j] = compute_ap(recall[:, j], precision[:, j])
 
             # Plot
-            fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-            # print("recall:", recall.shape)
-            ax.plot(recall, precision)
-            # ax.plot(np.concatenate(([0.], recall[-1])), np.concatenate(([0.], precision[-1])))
-            ax.set_title('YOLOv3-SPP')
-            ax.set_xlabel('Recall')
-            ax.set_ylabel('Precision')
-            ax.set_xlim(0, 1)
-            fig.tight_layout()
-            fig.savefig('PR_curve.png', dpi=300)
-
-            plt.close()
+            # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+            # ax.plot(np.concatenate(([0.], recall)), np.concatenate(([0.], precision)))
+            # ax.set_title('YOLOv3-SPP'); ax.set_xlabel('Recall'); ax.set_ylabel('Precision')
+            # ax.set_xlim(0, 1)
+            # fig.tight_layout()
+            # fig.savefig('PR_curve.png', dpi=300)
 
     # Compute F1 score (harmonic mean of precision and recall)
     f1 = 2 * p * r / (p + r + 1e-16)
@@ -283,7 +270,7 @@ def compute_ap(recall, precision):
     mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
 
     # Integrate area under curve
-    method = 'continuous'  # methods: 'continuous', 'interp'
+    method = 'interp'  # methods: 'continuous', 'interp'
     if method == 'interp':
         x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
         ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
@@ -298,6 +285,7 @@ def compute_ap(recall, precision):
 def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
     box2 = box2.t()
+
     # Get the coordinates of bounding boxes
     if x1y1x2y2:  # x1, y1, x2, y2 = box1
         b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
@@ -311,10 +299,12 @@ def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False):
     # Intersection area
     inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
             (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
+
     # Union Area
     w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1
     w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1
     union = (w1 * h1 + 1e-16) + w2 * h2 - inter
+
     iou = inter / union  # iou
     if GIoU or DIoU or CIoU:
         cw = torch.max(b1_x2, b2_x2) - torch.min(
@@ -338,6 +328,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False):
                 with torch.no_grad():
                     alpha = v / (1 - iou + v)
                 return iou - (rho2 / c2 + v * alpha)  # CIoU
+
     return iou
 
 
@@ -381,36 +372,23 @@ def wh_iou(wh1, wh2):
 class FocalLoss(nn.Module):
     # Wraps focal loss around existing loss_fcn() https://arxiv.org/pdf/1708.02002.pdf
     # i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=2.5)
-    def __init__(self, loss_fcn, gamma=0.5, alpha=1):
+    def __init__(self, loss_fcn, gamma=2, alpha=0.5, reduction='mean'):
         super(FocalLoss, self).__init__()
-        # loss_fcn.reduction = 'none'  # required to apply FL to each element
+        loss_fcn.reduction = 'none'  # required to apply FL to each element
         self.loss_fcn = loss_fcn
-        self.gamma = gamma  # 让易分样本降低对CNN的影响
-        self.alpha = alpha  # 跟类别数一致，正负样本不平衡问题
-        # gamma alpha
-        # 2.5   1   0 - nan
-        # 2     1   1 - -inf
-        # 1.5   1   0 - nan
-        # 1     1   正常运行
-        # 1.1   1   0-nan
-        # 1     1.5 可收敛
-        # 1     2   可收敛
-        # 1     5
-        # 0.9   1   0 - nan
-        # 1     0.5 可收敛
-
-        self.reduction = loss_fcn.reduction
-        self.loss_fcn.reduction = 'none'
-        # required to apply FL to each element
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
 
     def forward(self, input, target):
+        # print("before" * 10)
         loss = self.loss_fcn(input, target)
-
-        # log_p = probs.log()
-        # batch_loss = -alpha*(torch.pow((1-probs), self.gamma))*log_p
-
+        # print("middle" * 10)
+        # print("1:", loss)
         loss *= self.alpha * (1.000001 - torch.exp(-loss))**self.gamma
-        # non-zero power for gradient stability
+        # non-zero power for gradient stability 
+        # print("2:", loss)
+        # print("after" * 10)
         if self.reduction == 'mean':
             return loss.mean()
         elif self.reduction == 'sum':
@@ -418,123 +396,95 @@ class FocalLoss(nn.Module):
         else:  # 'none'
             return loss
 
-def smooth_BCE(eps=0.1):  
-    # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
-    # return positive, negative label smoothing BCE targets
-    return 1.0 - 0.5 * eps, 0.5 * eps
 
-def compute_loss(p, targets, model):
-    # p: (bs, anchors, grid, grid, classes + xywh)
+def compute_loss(p, targets, model):  
     # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
-    '''
-    以yolov3为例，有三个yolo层
-    tcls: 一个list保存三个tensor,每个tensor中有6(2个gtx3个anchor)个代表类别的数字
-    tbox: 一个list保存三个tensor,每个tensor形状[6,4],6(2个gtx3个anchor)个bbox
-    indices: 一个list保存三个tuple,每个tuple中保存4个tensor：
-            分别代表        b: 一个batch中的角标
-                            a: 代表所选中的正样本的anchor的下角标
-                            gj, gi: 代表所选中的grid的左上角坐标
-    anchor_vec: 一个list保存三个tensor,每个tensor形状[6,2],
-                6(2个gtx3个anchor)个anchor,注意大小是相对于13x13feature map的anchor大小
-    '''
 
     h = model.hyp  # hyperparameters
     arc = model.arc  # # (default, uCE, uBCE) detection architectures
-    # 具体使用的损失函数是通过arc参数决定的
     red = 'sum'  # Loss reduction (sum or mean)
 
     # Define criteria
     BCEcls = nn.BCEWithLogitsLoss(pos_weight=ft([h['cls_pw']]), reduction=red)
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=ft([h['obj_pw']]), reduction=red)
-    #BCEWithLogitsLoss = sigmoid + BCELoss
+
     BCE = nn.BCEWithLogitsLoss(reduction=red)
     CE = nn.CrossEntropyLoss(reduction=red)  # weight=model.class_weights
-
-    # class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
-    # cp, cn = smooth_BCE(eps=0.0)
-    # 这是最新的版本中提供了label smoothing的功能，只能用在多类问题
 
     if 'F' in arc:  # add focal loss
         g = h['fl_gamma']
         BCEcls, BCEobj, BCE, CE = FocalLoss(BCEcls, g), FocalLoss(
             BCEobj, g), FocalLoss(BCE, g), FocalLoss(CE, g)
-        # focal loss可以用在cls loss或者obj loss
 
     # Compute losses
     np, ng = 0, 0  # number grid points, targets
-    # np这个命名真的迷，建议改一下和numpy缩写重复
     for i, pi in enumerate(p):  # layer index, layer predictions
-        # 在yolov3中，p有三个yolo layer的输出pi
-        # 形状为:(bs, anchors, grid, grid, classes + xywh) 
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
-        tobj = torch.zeros_like(pi[..., 0])  
-        # tobj = target obj, 形状为(bs, anchors, grid, grid)
-        np += tobj.numel() # 返回tobj中元素个数
+        tobj = torch.zeros_like(pi[..., 0])  # target obj
+        np += tobj.numel()
 
         # Compute losses
         nb = len(b)
-        if nb:  
-            ng += nb # number of targets 用于最后算平均loss
-            # (bs, anchors, grid, grid, classes + xywh) 
-            ps = pi[b, a, gj, gi] # 即找到了对应目标的classes+xywh，形状为[6(2x3),6]
+        if nb:  # number of targets
+            ng += nb
+            ps = pi[b, a, gj, gi]
+            # prediction subset corresponding to targets
+            # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])
+            # wh power loss (uncomment)
 
             # GIoU
             pxy = torch.sigmoid(
-                ps[:, 0:2] # 将x,y进行sigmoid
+                ps[:, 0:2]
             )  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
-
             pwh = torch.exp(ps[:, 2:4]).clamp(max=1E3) * anchor_vec[i]
-            # 防止溢出进行clamp操作,乘以13x13feature map对应的anchor
             pbox = torch.cat((pxy, pwh), 1)  # predicted box
-            # pbox: predicted bbox shape:[6, 4]
             giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False,
                             GIoU=True)  # giou computation
-            # 计算giou loss， 形状为6
-            lbox += (1.0 - giou).sum() if red == 'sum' else (1.0 - giou).mean()
-            # bbox loss直接由giou决定
+            lbox += (1.0 - giou).sum() if red == 'sum' else (
+                1.0 - giou).mean()  # giou loss
             tobj[b, a, gj, gi] = giou.detach().type(tobj.dtype)
-            # target obj 用giou取代1，代表该点对应置信度
 
-            # cls loss 只计算多类之间的loss,单类不进行计算
-            if 'default' in arc and model.nc > 1:
+            if 'default' in arc and model.nc > 1:  # cls loss (only if multiple classes)
                 t = torch.zeros_like(ps[:, 5:])  # targets
-                t[range(nb), tcls[i]] = 1.0 # 设置对应class为1
-                lcls += BCEcls(ps[:, 5:], t)  # 使用BCE计算分类loss
+                t[range(nb), tcls[i]] = 1.0
+                lcls += BCEcls(ps[:, 5:], t)  # BCE
+
+                # lcls += CE(ps[:, 5:], tcls[i])  # CE
+
+                # Instance-class weighting (use with reduction='none')
+                # nt = t.sum(0) + 1  # number of targets per class
+                # lcls += (BCEcls(ps[:, 5:], t) / nt).mean() * nt.mean()  # v1
+                # lcls += (BCEcls(ps[:, 5:], t) / nt[tcls[i]].view(-1,1)).mean() * nt.mean()  # v2
+
+            # Append targets to text file
+            # with open('targets.txt', 'a') as file:
+            #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
         if 'default' in arc:  # separate obj and cls
             lobj += BCEobj(pi[..., 4], tobj)  # obj loss
-            # pi[...,4]对应的是该框中含有目标的置信度，和giou计算BCE
-            # 相当于将obj loss和cls loss分开计算
 
         elif 'BCE' in arc:  # unified BCE (80 classes)
             t = torch.zeros_like(pi[..., 5:])  # targets
             if nb:
-                t[b, a, gj, gi, tcls[i]] = 1.0 # 对应正样本class置信度设置为1
+                t[b, a, gj, gi, tcls[i]] = 1.0
             lobj += BCE(pi[..., 5:], t)
-            #pi[...,5:]对应的是所有的class
 
         elif 'CE' in arc:  # unified CE (1 background + 80 classes)
             t = torch.zeros_like(pi[..., 0], dtype=torch.long)  # targets
             if nb:
-                t[b, a, gj, gi] = tcls[i] + 1 # 由于cls是从零开始计数的，所以+1
+                t[b, a, gj, gi] = tcls[i] + 1
             lcls += CE(pi[..., 4:].view(-1, model.nc + 1), t.view(-1))
-            # 这里将obj loss和cls loss一起计算，使用CrossEntropy Loss
 
-    # 使用对应的权重来平衡，这个参数是作者通过参数搜索（random search）的方法搜索得到的
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
 
     if red == 'sum':
         bs = tobj.shape[0]  # batch size
-        lobj *= 3 / (6300 * bs) * 2
-        # 6300 = (10 ** 2 + 20 ** 2 + 40 ** 2) * 3
-        # 输入为320x320的图片，则存在6300个anchor
-        # 3代表3个yolo层, 2是一个超参数，通过实验获取
-        # 如果不想计算的话，可以修改red='mean'
+        lobj *= 3 / (6300 * bs) * 2  # 3 / np * 2
         if ng:
             lcls *= 3 / ng / model.nc
             lbox *= 3 / ng
@@ -545,157 +495,65 @@ def compute_loss(p, targets, model):
 
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]
-    # 这里的image是一个数字，代表是当前batch的第几个图片
-    # x,y,w,h都进行了归一化，除以了宽或者高
 
     nt = len(targets)
-
     tcls, tbox, indices, av = [], [], [], []
-    
     multi_gpu = type(model) in (nn.parallel.DataParallel,
                                 nn.parallel.DistributedDataParallel)
-
-    reject, use_all_anchors = False, True
+    reject, use_all_anchors = True, True
     for i in model.yolo_layers:
-        # yolov3.cfg中有三个yolo层，这部分用于获取对应yolo层的grid尺寸和anchor大小
-        # ng 代表num of grid (13,13) anchor_vec [[x,y],[x,y]]
-        # 注意这里的anchor_vec: 假如现在是yolo第一个层(downsample rate=32)
-        # 这一层对应anchor为：[116, 90], [156, 198], [373, 326]
-        # anchor_vec实际值为以上除以32的结果：[3.6,2.8],[4.875,6.18],[11.6,10.1]
-        # 原图 416x416 对应的anchor为 [116, 90]
-        # 下采样32倍后 13x13 对应的anchor为 [3.6,2.8]
+        # get number of grid points and anchor vec for this yolo layer
         if multi_gpu:
-            ng = model.module.module_list[i].ng
-            anchor_vec = model.module.module_list[i].anchor_vec
+            ng, anchor_vec = model.module.module_list[
+                i].ng, model.module.module_list[i].anchor_vec
         else:
-            ng = model.module_list[i].ng,
-            anchor_vec = model.module_list[i].anchor_vec
+            ng, anchor_vec = model.module_list[i].ng, model.module_list[
+                i].anchor_vec
+        # ng 代表num of grid (13,13) anchor_vec [[x,y],[x,y]]
 
         # iou of targets-anchors
-        # targets中保存的是ground truth
         t, a = targets, []
-
-        gwh = t[:, 4:6] * ng[0]
+        gwh = t[:, 4:6] * ng
 
         if nt:  # 如果存在目标
-            # anchor_vec: shape = [3, 2] 代表3个anchor
-            # gwh: shape = [2, 2] 代表 2个ground truth
-            # iou: shape = [3, 2] 代表 3个anchor与对应的两个ground truth的iou
             iou = wh_iou(anchor_vec, gwh)  # 计算先验框和GT的iou
 
             if use_all_anchors:
                 na = len(anchor_vec)  # number of anchors
-                a = torch.arange(na).view(
-                    (-1, 1)).repeat([1, nt]).view(-1)  # 构造 3x2 -> view到 6
-                # a = [0,0,1,1,2,2]
+                a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
                 t = targets.repeat([na, 1])
-                # targets: [image, cls, x, y, w, h]
-                # 复制3个: shape[2,6] to shape[6,6]
                 gwh = gwh.repeat([na, 1])
-                # gwh shape:[6,2]
             else:  # use best anchor only
                 iou, a = iou.max(0)  # best iou and anchor
-                # 取iou最大值是darknet的默认做法，返回的a是下角标
 
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
             if reject:
-                # 在这里将所有阈值小于ignore thresh的去掉
                 j = iou.view(-1) > model.hyp['iou_t']
-                # iou threshold hyperparameter
+                    # iou threshold hyperparameter
                 t, a, gwh = t[j], a[j], gwh[j]
 
         # Indices
         b, c = t[:, :2].long().t()  # target image, class
-        # 取的是targets[image, class, x,y,w,h]中 [image, class]
 
-        gxy = t[:, 2:4] * ng[0]  # grid x, y
+        gxy = t[:, 2:4] * ng  # grid x, y
 
         gi, gj = gxy.long().t()  # grid x, y indices
-        # 注意这里通过long将其转化为整形，代表格子的左上角
 
         indices.append((b, a, gj, gi))
-        # indice结构体保存内容为：
-        '''
-        b: 一个batch中的角标
-        a: 代表所选中的正样本的anchor的下角标
-        gj, gi: 代表所选中的grid的左上角坐标
-        '''
 
         # Box
         gxy -= gxy.floor()  # xy
-        # 现在gxy保存的是偏移量，是需要YOLO进行拟合的对象
         tbox.append(torch.cat((gxy, gwh), 1))  # xywh (grids)
-        # 保存对应偏移量和宽高（对应13x13大小的）
         av.append(anchor_vec[a])  # anchor vec
-        # av 是anchor vec的缩写，保存的是匹配上的anchor的列表
 
         # Class
         tcls.append(c)
-        # tcls用于保存匹配上的类别列表
         if c.shape[0]:  # if any targets
             assert c.max() < model.nc, 'Model accepts %g classes labeled from 0-%g, however you labelled a class %g. ' \
                                        'See https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data' % (
                                            model.nc, model.nc - 1, c.max())
+    # tcls, tbox, indices, anchor_vec = build_targets(model, targets)
     return tcls, tbox, indices, av
-
-
-def tensor_to_PIL(tensor):
-    image = tensor.cpu().clone()
-    unloader = torchvision.transforms.ToPILImage()
-    image = unloader(image)
-    return image
-
-
-def brightness(tensor_image):
-    image = tensor_to_PIL(
-        tensor_image
-    )  # Image.fromarray(cv2.cvtColor(cv2_image.numpy(),cv2.COLOR_BGR2RGB))
-    im = image.convert('L')
-    stat = ImageStat.Stat(im)
-    return stat.mean[0]
-
-
-def brightness_thresh(tensor_image, num_thresh: int):
-    '''
-    获取大于某个阈值的像素的个数
-    '''
-    image = tensor_to_PIL(tensor_image)
-    img_data = np.asarray(image)
-    _tmp = np.where(img_data > num_thresh)[0]
-    return len(_tmp)
-
-
-def calc_brightness(image, dc, bright_thres=None):
-    """[summary]
-
-    Arguments:
-        image {[tensor]} -- [description]
-        dc {[tensor]} -- [x1,y1,x2,y2,c,c]
-
-    Returns:
-        temp_dc[tensor] -- [x1,y1,x2,y2,c,c,score,brightness]
-    """
-    temp_dc = []
-    for item in dc:
-        x1, y1, x2, y2, _, cc = item
-        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        cutted_img = image[:, y1:y2, x1:x2]
-        # bright = brightness(cutted_img)
-        num_bright = brightness_thresh(cutted_img, num_thresh=200)
-        print("num of bright:", num_bright)
-        # temp_dc.append([*item, bright / 255.0 + cc, bright])
-        temp_dc.append([*item, num_bright / 255.0 + cc, num_bright])
-
-    # sort temp_dc by brightness and confidence
-    temp_dc = torch.Tensor(temp_dc)
-    temp_dc = temp_dc[temp_dc[:, 6].argsort(descending=True)]
-    temp_dc = temp_dc.cuda() if torch.cuda.is_available() else temp_dc
-
-    # 通过brightness滤除一部分
-    if bright_thres:
-        temp_dc = temp_dc[temp_dc[:, 7] >
-                          bright_thres]  # temp_dc[temp_dc[:, 7] > bright_thres]
-    return temp_dc
 
 
 def non_max_suppression(prediction,
@@ -703,9 +561,7 @@ def non_max_suppression(prediction,
                         iou_thres=0.5,
                         multi_cls=True,
                         classes=None,
-                        agnostic=False,
-                        images=None,
-                        targets=None):
+                        agnostic=False):
     """
     Removes detections with lower object confidence score than 'conf_thres'
     Non-Maximum Suppression to further filter detections.
@@ -715,54 +571,13 @@ def non_max_suppression(prediction,
     # NMS methods https://github.com/ultralytics/yolov3/issues/679 'or', 'and', 'merge', 'vision', 'vision_batch'
 
     # Box constraints
-    min_wh, max_wh = 2, 43  # from 4096 to 43
-    # (pixels) minimum and maximum box width and height
+    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
 
     method = 'or'
-    #                mAP+F1
-    # 'or'          92.7+94.3
-    # 'and'         92.7+94.3
-    # 'merge'       92.7+94.2
-    # 'soft'        92.7+94.3
-    # 'brightness'  92.6+94.2
-    # 'vision'
-    # 'vision_batch'
-    # images = images.cpu()
     output = [None] * len(prediction)
     for image_i, pred in enumerate(prediction):
-
-        # 生成随机数用于命名
-        # _randint = random.randint(0, 100000)
-
         # Apply conf constraint
         pred = pred[pred[:, 4] > conf_thres]
-
-        # 得到对应的img图片内容
-
-        # img = images[image_i]
-        # pil_img = torchvision.transforms.functional.to_pil_image(img)
-        # cv2_img = cv2.cvtColor(np.asarray(pil_img), cv2.COLOR_RGB2BGR)
-        # outimg = multi_gray_measure(cv2_img)
-        # outimg = outimg[..., np.newaxis]
-        # outimg = np.repeat(outimg, 3, axis=2)
-        # outimg = torchvision.transforms.functional.to_tensor(outimg)
-        '''
-        # if images is not None:
-        img = images[image_i]
-        _pil_img = tensor_to_PIL(img)
-        tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
-        img_h, img_w, _ = tmp_img.shape
-
-        # if targets is not None:
-        
-        target = targets[image_i]
-        _, _, cx, cy, w, h = target
-        w, h = float(w) * img_w, float(h) * img_h
-        cx, cy = float(cx) * img_w, float(cy) * img_h
-        _box = [cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2]
-        plot_one_box(_box, tmp_img, color=[0, 0, 255], line_thickness=4)
-        cv2.imwrite("./gt_%05d.jpg" % _randint, tmp_img)
-        '''
 
         # Apply width-height constraint
         pred = pred[(pred[:, 2:4] > min_wh).all(1)
@@ -778,21 +593,6 @@ def non_max_suppression(prediction,
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(pred[:, :4])
-        '''
-        # 画图-在conf_thres筛选之后
-        # _pil_img = tensor_to_PIL(img)
-        # tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
-        tmp_before_nms_img = tmp_img
-        for _pred in pred:
-            cx, cy, w, h, _, score = _pred
-            _box = [cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2]
-            # print(type(_box),type(tmp_img))
-            plot_one_box(_box,
-                         tmp_before_nms_img,
-                         label="%.2f" % (score),
-                         color=[0, 255, 0])
-        cv2.imwrite("./Before_NMS_%05d.jpg" % _randint, tmp_before_nms_img)
-        '''
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_cls:
@@ -833,7 +633,6 @@ def non_max_suppression(prediction,
         for c in cls.unique():
             dc = pred[cls == c]  # select class c
             n = len(dc)
-            # print("num of dc:",n)
             if n == 1:
                 det_max.append(dc)  # No NMS required if only 1 prediction
                 continue
@@ -846,6 +645,14 @@ def non_max_suppression(prediction,
                     dc[:, :4], dc[:, 4], iou_thres)])
 
             elif method == 'or':  # default
+                # METHOD1
+                # ind = list(range(len(dc)))
+                # while len(ind):
+                # j = ind[0]
+                # det_max.append(dc[j:j + 1])  # save highest conf detection
+                # reject = (bbox_iou(dc[j], dc[ind]) > iou_thres).nonzero()
+                # [ind.pop(i) for i in reversed(reject)]
+
                 # METHOD2
                 while dc.shape[0]:
                     det_max.append(dc[:1])  # save highest conf detection
@@ -860,25 +667,6 @@ def non_max_suppression(prediction,
                     if iou.max() > 0.5:
                         det_max.append(dc[:1])
                     dc = dc[1:][iou < iou_thres]  # remove ious > threshold
-
-            elif method == 'brightness':
-                # METHOD2
-                if images is None:
-                    print("Image is None.")
-                else:
-                    # 计算brightness均值
-                    temp_dc = calc_brightness(outimg, dc, bright_thres=None)
-                    while temp_dc.shape[0]:
-                        det_max.append(temp_dc[:1])
-                        # save highest conf detection
-                        if len(temp_dc) == 1:
-                            # Stop if we're at the last detection
-                            break
-                        iou = bbox_iou(temp_dc[0], temp_dc[1:])
-                        # iou with other boxes
-                        temp_dc = temp_dc[1:][iou < iou_thres]
-                        # remove ious > threshold
-                        temp_dc = temp_dc
 
             elif method == 'merge':  # weighted mixture box
                 while len(dc):
@@ -904,27 +692,7 @@ def non_max_suppression(prediction,
                     dc = dc[
                         dc[:, 4] >
                         conf_thres]  # https://github.com/ultralytics/yolov3/issues/362
-        # 画 after nms
-        # _pil_img = tensor_to_PIL(img)
-        # tmp_img = cv2.cvtColor(np.asarray(_pil_img), cv2.COLOR_RGB2BGR)
-        '''
-        tmp_after_nms_img = tmp_img
-        if len(det_max):
-            for i in range(len(det_max)):
-                # print(det_max[i].shape)
-                _det = det_max[i][0]
-                x1, y1, x2, y2, c, score = _det
-                _c = [x1, y1, x2, y2]
-                plot_one_box(_box,
-                             tmp_after_nms_img,
-                             label="%.2f" % (c),
-                             color=[255, 0, 0])
-            cv2.imwrite("./After_NMS_%d.jpg" % _randint, tmp_after_nms_img)
-        else:
-            print("Nothing detected.")
-            cv2.imwrite("./NothingDetected_%d.jpg" % _randint,
-                        tmp_after_nms_img)
-        '''
+
         if len(det_max):
             det_max = torch.cat(det_max)  # concatenate
             output[image_i] = det_max[(-det_max[:, 4]).argsort()]  # sort
@@ -1210,7 +978,7 @@ def apply_classifier(x, model, img, im0):
 
 def fitness(x):
     # Returns fitness (for use with results.txt or evolve.txt)
-    w = [0.0, 0.01, 0.99, 0.0
+    w = [0.0, 0.0, 0.8, 0.2
          ]  # weights for [P, R, mAP, F1]@0.5 or [P, R, mAP@0.5:0.95, mAP@0.5]
     return (x[:, :4] * w).sum(1)
 
@@ -1219,26 +987,21 @@ def fitness(x):
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(
-        0.002 * (img.shape[0] + img.shape[1]) / 2)  # line thickness
-    color = color if color is not None else [
-        random.randint(0, 255) for _ in range(3)
-    ]
+        0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    # print(type(color))
     cv2.rectangle(img, c1, c2, color, thickness=tl)
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-        # cv2.rectangle(img, c1, c2, color, -1)  # filled
-        cv2.putText(
-            img,
-            label,
-            (c1[0] + random.randint(4, 80), c1[1] - 2 + random.randint(4, 80)),
-            0,
-            tl / 4, [225, 255, 255],
-            thickness=tf,
-            lineType=cv2.LINE_AA)
+        cv2.rectangle(img, c1, c2, color, -1)  # filled
+        cv2.putText(img,
+                    label, (c1[0], c1[1] - 2),
+                    0,
+                    tl / 3, [225, 255, 255],
+                    thickness=tf,
+                    lineType=cv2.LINE_AA)
 
 
 def plot_wh_methods():  # from utils.utils import *; plot_wh_methods()
@@ -1415,49 +1178,3 @@ def plot_results(start=0, stop=0, bucket='',
     fig.tight_layout()
     ax[1].legend()
     fig.savefig('results.png', dpi=200)
-
-
-def multi_gray_measure(img: np.ndarray):
-    shape = img.shape
-    row, col, c = shape
-    if c > 1:
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    img = img.astype(np.float64)
-    img *= 1 / 255.0
-
-    ave_filted = []
-
-    I3 = cv2.blur(img, ksize=(3, 3))
-    I5 = cv2.blur(img, ksize=(5, 5))
-    I7 = cv2.blur(img, ksize=(7, 7))
-    I9 = cv2.blur(img, ksize=(9, 9))
-    I11 = cv2.blur(img, ksize=(11, 11))
-
-    H3 = I3 - I11
-    H5 = I5 - I11
-    H7 = I7 - I11
-    H9 = I9 - I11
-
-    H3 = np.maximum(H3, 0)
-    H5 = np.maximum(H5, 0)
-    H7 = np.maximum(H7, 0)
-    H9 = np.maximum(H9, 0)
-
-    H_list = []
-
-    H3 = np.multiply(H3, H3)
-    H5 = np.multiply(H5, H5)
-    H7 = np.multiply(H7, H7)
-    H9 = np.multiply(H9, H9)
-
-    H_list.append(H3)
-    H_list.append(H5)
-    H_list.append(H7)
-    H_list.append(H9)
-
-    H_numpy = np.array(H_list)
-    out = np.max(H_numpy, axis=0)
-    out = out.astype(np.float64)
-    cv2.normalize(out, out, 0.0, 1.0, cv2.NORM_MINMAX)
-    out = np.float32(out) * 255.0
-    return out
