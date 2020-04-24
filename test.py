@@ -172,6 +172,9 @@ def test(
                 )
 
         # Statistics per image
+        '''
+        output: (bs, x1, y1, x2, y2, object_conf, conf, class)
+        '''
         for si, pred in enumerate(output):
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
@@ -215,8 +218,7 @@ def test(
                 tcls_tensor = labels[:, 0]
 
                 # target boxes
-                tbox = xywh2xyxy(labels[:, 1:5]) * torch.Tensor(
-                    [width, height, width, height]).to(device)
+                tbox = xywh2xyxy(labels[:, 1:5]) * torch.Tensor([width, height, width, height]).to(device)
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):

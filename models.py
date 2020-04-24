@@ -378,7 +378,7 @@ class YOLOLayer(nn.Module):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)
-        # (bs, anchors, grid, grid, classes + xywh)
+        # (bs, anchors, grid, grid, xywhc+classes)
         p = p.view(bs, self.na, self.no, self.ny,
                    self.nx).permute(0, 1, 3, 4, 2).contiguous()
 
@@ -400,12 +400,15 @@ class YOLOLayer(nn.Module):
 
         else:  # 测试推理过程
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
+            # (bs, anchors, grid, grid, xywhc+classes)
             io = p.clone()  # inference output
-            io[..., :2] = torch.sigmoid(io[..., :2]) + self.grid_xy  # xy
+            io[..., :2] = torch.sigmoid(io[..., :2]) + self.grid_xy  # xy进行sigmoid归一化
+
             io[..., 2:4] = torch.exp(
-                io[..., 2:4]) * self.anchor_wh  # wh yolo method
+                io[..., 2:4]) * self.anchor_wh  # wh yolo method # wh
+
             # io[..., 2:4] = ((torch.sigmoid(io[..., 2:4]) * 2) ** 3) * self.anchor_wh  # wh power method
-            io[..., :4] *= self.stride
+            io[..., :4] *= self.stride # obj confidence
 
             if 'default' in self.arc:  # seperate obj and cls
                 torch.sigmoid_(io[..., 4])
