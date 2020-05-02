@@ -831,7 +831,7 @@ def coco_single_class_labels(path='../coco/labels/train2014/', label_class=43):
                 Path(file).name.replace('txt', 'jpg'))  # copy images
 
 
-def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(320, 640)):
+def kmean_anchors(path='/home/dongpeijie/datasets/dataset4/2007_train.txt', n=5, img_size=(416, 416)):
     # from utils.utils import *; _ = kmean_anchors()
     # Produces a list of target kmeans suitable for use in *.cfg files
     from utils.datasets import LoadImagesAndLabels
@@ -865,8 +865,7 @@ def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(320, 640)):
                                   augment=True,
                                   rect=True,
                                   cache_labels=True)
-    nr = 1 if img_size[0] == img_size[
-        1] else 10  # number augmentation repetitions
+    nr = 1 if img_size[0] == img_size[1] else 10  # number augmentation repetitions
     for s, l in zip(dataset.shapes, dataset.labels):
         wh.append(l[:, 3:5] *
                   (s / s.max()))  # image normalized to letterbox normalized wh
@@ -889,7 +888,7 @@ def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(320, 640)):
         k *= s
     k = print_results(thr, wh, k)
 
-    # # Plot
+    # Plot
     # k, d = [None] * 20, [None] * 20
     # for i in tqdm(range(1, 21)):
     #     k[i-1], d[i-1] = kmeans(wh / s, i)  # points, mean distance
@@ -899,7 +898,7 @@ def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(320, 640)):
 
     # Evolve
     wh = torch.Tensor(wh)
-    f, ng = fitness(thr, wh, k), 1000  # fitness, generations
+    f, ng = fitness(thr, wh, k), 2000  # fitness, generations
     for _ in tqdm(range(ng), desc='Evolving anchors'):
         kg = (
             k.copy() *

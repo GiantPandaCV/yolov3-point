@@ -1,7 +1,7 @@
 import os
 import shutil
 
-cfg_path = "./cfg/yolov3-1cls.cfg"
+cfg_path = "./cfg/mobilenetv2.cfg"
 save_path = "./cfg/preprocess_cfg/"
 
 new_save_name = os.path.join(save_path,os.path.basename(cfg_path))
