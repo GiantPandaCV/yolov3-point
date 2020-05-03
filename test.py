@@ -159,9 +159,7 @@ def test(
                                          conf_thres=conf_thres,
                                          iou_thres=iou_thres,
                                          multi_cls=False)
-                                        #  ,
-                                        #  images=imgs,
-                                        #  targets=targets)
+
 
             if classify:
                 output = apply_tiny_classifier(
@@ -212,7 +210,7 @@ def test(
                     })
 
             # Assign all predictions as incorrect
-            correct = torch.zeros(len(pred), niou, dtype=torch.bool)
+            correct = torch.zeros(len(pred), niou, dtype=torch.uint8)
             if nl:
                 detected = []  # target indices
                 tcls_tensor = labels[:, 0]

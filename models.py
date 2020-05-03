@@ -28,6 +28,7 @@ def create_modules(module_defs, img_size, arc):
         '''
         通过type字样不同的类型，来进行模型构建
         '''
+        # print(i, mdef['type'])
         if mdef['type'] == 'convolutional':
             bn = int(mdef['batch_normalize'])
             filters = int(mdef['filters'])
