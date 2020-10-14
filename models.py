@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from PIL import Image
 import numpy as np
 from torchvision.transforms.functional import to_pil_image, to_tensor
-# from torchvision.transforms import ToTensor
 
 from utils.google_utils import *
 from utils.parse_config import *
@@ -935,8 +934,7 @@ class DarkneXt(nn.Module):
             # from tensor to pil
             pil_img = to_pil_image(tmp_x[idx].cpu())
             cv2_img = cv2.cvtColor(np.asarray(pil_img), cv2.COLOR_RGB2BGR)
-            outimg = multi_gray_measure(cv2_img)
-            outimg = outimg[..., np.newaxis]
+            outimg = cv2_img[..., np.newaxis]
             outimg = np.repeat(outimg, 3, axis=2)
             # from opencv to tensor
             outimg = to_tensor(outimg)
